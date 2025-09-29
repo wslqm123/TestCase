@@ -1,33 +1,28 @@
 // docs/script.js
 
-// 确保在 DOM 加载完成后执行
 document.addEventListener('DOMContentLoaded', () => {
 
     // 1. 全局变量和初始化
-    // 等待 markmap 对象加载完成
     const checkMarkmapReady = setInterval(() => {
-        if (window.markmap && window.markmap.Markmap && window.markmap.Transformer && window.markmap.Toolbar) {
+        if (window.markmap && window.markmap.Markmap && window.markmap.Transformer && window.markmap.Toolbar && window.d3) {
             clearInterval(checkMarkmapReady);
             initializeApp();
         }
-    }, 100);
+    }, 50);
 
     function initializeApp() {
         const { Markmap, Transformer, Toolbar } = window.markmap;
         
-        // 实例化
         const transformer = new Transformer();
         const svgEl = document.querySelector('#markmap');
         const markmapInstance = Markmap.create(svgEl, null);
         Toolbar.create(markmapInstance, svgEl);
 
-        // DOM元素获取
         const userSelector = document.getElementById('userSelector');
         const versionSelector = document.getElementById('versionSelector');
         const editModeToggle = document.getElementById('editModeToggle');
         const saveButton = document.getElementById('saveButton');
 
-        // 状态定义
         const STATUS = { UNTESTED: '⚪️', PASS: '✅', FAIL: '❌', BLOCKED: '🟡' };
         const STATUS_CYCLE = [STATUS.UNTESTED, STATUS.PASS, STATUS.FAIL, STATUS.BLOCKED];
         let currentStates = {};
@@ -100,6 +95,14 @@ document.addEventListener('DOMContentLoaded', () => {
             markmapInstance.svg.selectAll('g.markmap-node').each(function(nodeData) {
                 const element = d3.select(this);
                 const textElement = element.select('text');
+
+                // --- 关键修复在这里 ---
+                // 如果这个 g 元素没有 text 子元素，就直接跳过
+                if (textElement.empty()) {
+                    return;
+                }
+                // --- 修复结束 ---
+                
                 const originalTextWithStatus = textElement.text();
                 const originalText = nodeData.content.replace(/^[⚪️✅❌🟡]\s*/, '');
 
@@ -131,7 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (currentUser === 'default') {
                 const msg = '请先选择一个测试员';
-                (window.tt && window.tt.showToast) ? tt.showToast({ title: msg, icon: 'fail' }) : alert(msg);
+                (window.tt && tt.showToast) ? tt.showToast({ title: msg, icon: 'fail' }) : alert(msg);
                 return;
             }
 
@@ -160,6 +163,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // --- 事件监听器 ---
         async function handleSelectionChange() {
+            // 在重新加载前，先更新URL，这样用户刷新页面时能保留选择
+            const params = new URLSearchParams();
+            params.set('version', versionSelector.value);
+            params.set('user', userSelector.value);
+            if (editModeToggle.checked) {
+                params.set('edit', 'true');
+            }
+            const newUrl = `${window.location.pathname}?${params.toString()}`;
+            window.history.replaceState({}, '', newUrl); // 更新URL而不刷新页面
+
             await loadDataAndRender();
             saveButton.classList.toggle('hidden', !(editModeToggle.checked && userSelector.value !== 'default'));
         }
@@ -168,21 +181,4 @@ document.addEventListener('DOMContentLoaded', () => {
         versionSelector.addEventListener('change', handleSelectionChange);
         
         editModeToggle.addEventListener('change', () => {
-            saveButton.classList.toggle('hidden', !(editModeToggle.checked && userSelector.value !== 'default'));
-            applyStatesToUI();
-        });
-
-        saveButton.addEventListener('click', saveStatesToGitHub);
-
-        // --- 启动应用 ---
-        const urlParams = new URLSearchParams(window.location.search);
-        const version = urlParams.get('version');
-        const user = urlParams.get('user');
-        const edit = urlParams.get('edit');
-        if (version) versionSelector.value = version;
-        if (user) userSelector.value = user;
-        if (edit === 'true') editModeToggle.checked = true;
-
-        handleSelectionChange();
-    }
-});
+            handleSelectionChange(); // 切换编辑模式也需要
