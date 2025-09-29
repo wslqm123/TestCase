@@ -3,12 +3,15 @@
 window.onload = () => {
     // 1. 全局变量和初始化
     const { Markmap, Transformer, Toolbar } = window.markmap;
-
+    
+    if (!Markmap || !Transformer || !Toolbar) {
+        console.error('Markmap libraries did not load correctly.');
+        return;
+    }
+    
+    const transformer = new Transformer();
     const svgEl = document.querySelector('#markmap');
-    // 在 Markmap 选项中启用所有内置插件
-    const markmapInstance = Markmap.create(svgEl, {
-        embed: true, // 允许嵌入HTML
-    });
+    const markmapInstance = Markmap.create(svgEl, null);
     Toolbar.create(markmapInstance, svgEl);
 
     const userSelector = document.getElementById('userSelector');
@@ -30,7 +33,6 @@ window.onload = () => {
     async function loadDataAndRender() {
         const version = versionSelector.value;
         const user = userSelector.value;
-        const isEditMode = editModeToggle.checked;
 
         try {
             const baseUrl = getBaseUrl();
@@ -40,124 +42,145 @@ window.onload = () => {
 
             const [mdResponse, stateResponse] = await Promise.all([
                 fetch(markdownUrl, fetchOptions),
-                user !== 'default' ? fetch(resultsUrl, fetchOptions) : Promise.resolve(null),
+                user !== 'default' ? fetch(resultsUrl, fetchOptions) : Promise.resolve(null)
             ]);
 
             if (!mdResponse.ok) throw new Error(`无法加载用例文件: ${mdResponse.statusText}`);
             let markdownText = await mdResponse.text();
-
+            
             if (!markdownText.trim()) {
                 markdownText = "# (空)\n- 此版本没有测试用例。";
             }
             
             currentStates = (stateResponse && stateResponse.ok) ? await stateResponse.json() : {};
-
-            // *** 核心修改：使用 Transformer 插件 ***
-            const transformer = new Transformer();
+            
+            // 注意：我们现在渲染的是未经处理的原始Markdown
             const { root, features } = transformer.transform(markdownText);
             
-            // 遍历转换后的节点树，在数据层面注入状态和交互
-            walkTree(root, (node) => {
-                const match = node.content.match(/\[([A-Z0-9-]+)\]/);
-                if (match) {
-                    const caseId = match[1];
-                    const status = currentStates[caseId] || STATUS.UNTESTED;
-                    node.content = `${status} ${node.content}`;
-
-                    // 如果在编辑模式，直接在节点数据中添加 HTML class 和 onclick 事件
-                    if (isEditMode && user !== 'default') {
-                        node.payload = {
-                            ...node.payload,
-                            class: 'editable-node',
-                            // 将点击事件信息存储在数据属性中
-                            attrs: {
-                                'data-case-id': caseId,
-                                'data-current-status': status
-                            },
-                        };
-                    }
-                }
-            });
-
             markmapInstance.setData(root, { ...features });
             await markmapInstance.fit();
             
-            // 渲染完成后，再为带有特定 class 的元素绑定事件
-            attachClickHandlers();
+            // 渲染完成后，再用 applyStatesAndInteractivity 来处理所有UI和交互
+            applyStatesAndInteractivity();
 
         } catch (error) {
             console.error("加载或渲染失败:", error);
-            const transformer = new Transformer();
             const { root } = transformer.transform(`# 加载失败\n\n- ${error.message}`);
             markmapInstance.setData(root);
             await markmapInstance.fit();
         }
     }
 
-    // 遍历树的辅助函数
-    function walkTree(node, callback) {
-        callback(node);
-        if (node.children) {
-            node.children.forEach(child => walkTree(child, callback));
-        }
-    }
-
-    // 事件绑定函数，现在变得更简单
-    function attachClickHandlers() {
+    // 新函数：合并了状态显示和事件绑定的所有逻辑
+    function applyStatesAndInteractivity() {
         const isEditMode = editModeToggle.checked;
         const currentUser = userSelector.value;
-        
-        if (!isEditMode || currentUser === 'default' || !markmapInstance || !markmapInstance.svg) return;
-
-        console.log("Attaching click handlers...");
         const d3 = window.d3;
         
-        // 我们只选择那些被插件标记过的节点
-        markmapInstance.svg.selectAll('g.editable-node').each(function() {
+        if (!markmapInstance || !markmapInstance.svg) return;
+        
+        console.log(`Applying states and interactivity. Edit mode: ${isEditMode}`);
+
+        markmapInstance.svg.selectAll('g.markmap-node').each(function(nodeData) {
             const element = d3.select(this);
             const textElement = element.select('text');
-            const caseId = element.attr('data-case-id');
+
+            if (textElement.empty()) return;
+
+            const originalText = nodeData.content;
+            const match = originalText.match(/\[([A-Z0-9-]+)\]/);
+            if (!match) return; // 只处理包含ID的节点
+
+            const caseId = match[1];
+            const currentStatus = currentStates[caseId] || STATUS.UNTESTED;
             
-            element.style('cursor', 'pointer');
-            element.on('click', function(event) {
-                event.stopPropagation();
+            // 更新文本内容
+            textElement.text(`${currentStatus} ${originalText}`);
+
+            // 移除旧事件，设置默认样式
+            element.on('click', null).style('cursor', 'default').classed('editable-node', false);
+            
+            // 如果是编辑模式，添加样式和点击事件
+            if (isEditMode && currentUser !== 'default') {
+                element.classed('editable-node', true).style('cursor', 'pointer');
                 
-                const oldStatus = currentStates[caseId] || STATUS.UNTESTED;
-                const currentIndex = STATUS_CYCLE.indexOf(oldStatus);
-                const newStatus = STATUS_CYCLE[(currentIndex + 1) % STATUS_CYCLE.length];
-                
-                currentStates[caseId] = newStatus;
-                
-                // 更新文本内容
-                const originalText = textElement.text();
-                textElement.text(originalText.replace(oldStatus, newStatus));
-            });
+                element.on('click', function(event) {
+                    event.stopPropagation();
+                    
+                    const oldStatus = currentStates[caseId] || STATUS.UNTESTED;
+                    const currentIndex = STATUS_CYCLE.indexOf(oldStatus);
+                    const newStatus = STATUS_CYCLE[(currentIndex + 1) % STATUS_CYCLE.length];
+                    
+                    currentStates[caseId] = newStatus;
+                    
+                    // 直接更新文本节点的显示
+                    textElement.text(`${newStatus} ${originalText}`);
+                });
+            }
         });
     }
 
     function saveStatesToGitHub() {
-        // ... (此函数无需修改)
+        const currentUser = userSelector.value;
+        const currentVersion = versionSelector.value;
+
+        if (currentUser === 'default') {
+            const msg = '请先选择一个测试员';
+            (window.tt && window.tt.showToast) ? tt.showToast({ title: msg, icon: 'fail' }) : alert(msg);
+            return;
+        }
+
+        saveButton.disabled = true;
+        saveButton.textContent = '保存中...';
+        
+        const messagePayload = {
+            action: 'saveData',
+            payload: { version: currentVersion, user: currentUser, content: currentStates, message: `[Test] ${currentUser} updated results for ${currentVersion}` }
+        };
+
+        if (window.tt && window.tt.miniProgram && window.tt.miniProgram.postMessage) {
+            window.tt.miniProgram.postMessage({ data: messagePayload });
+            setTimeout(() => {
+                if(window.tt.showToast) tt.showToast({ title: '保存指令已发送', icon: 'success' });
+                saveButton.disabled = false;
+                saveButton.textContent = '保存更改';
+            }, 1500);
+        } else {
+            console.log("Mocking save call:", messagePayload);
+            alert('保存功能可在飞书小程序外模拟，数据已打印到控制台，但不会真实保存。');
+            saveButton.disabled = false;
+            saveButton.textContent = '保存更改';
+        }
     }
 
     // --- 事件监听器 ---
-    async function handleSelectionChange() {
+    async function handleDataChange() {
         await loadDataAndRender();
+        updateUIState();
+    }
+
+    function handleInteractionChange() {
+        updateUIState();
+        applyStatesAndInteractivity();
+    }
+    
+    function updateUIState(){
         saveButton.classList.toggle('hidden', !(editModeToggle.checked && userSelector.value !== 'default'));
     }
 
-    userSelector.addEventListener('change', handleSelectionChange);
-    versionSelector.addEventListener('change', handleSelectionChange);
-    editModeToggle.addEventListener('change', handleSelectionChange); // 切换编辑模式也需要重绘来添加/删除 class 和事件
+    userSelector.addEventListener('change', handleDataChange);
+    versionSelector.addEventListener('change', handleDataChange);
+    editModeToggle.addEventListener('change', handleInteractionChange);
     saveButton.addEventListener('click', saveStatesToGitHub);
 
     // --- 启动应用 ---
     const urlParams = new URLSearchParams(window.location.search);
     const version = urlParams.get('version');
-    const user = urlParams.get('user');
+    const user = urlP.get('user');
     const edit = urlParams.get('edit');
     if (version) versionSelector.value = version;
     if (user) userSelector.value = user;
     if (edit === 'true') editModeToggle.checked = true;
-
-    handleSelectionChange(); // 初始加载
+    
+    handleDataChange(); // 初始加载
 };
