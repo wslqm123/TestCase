@@ -1,10 +1,18 @@
-// docs/script.js
+// 确保所有代码在 DOMContentLoaded 后执行，这是一个好的实践
+document.addEventListener('DOMContentLoaded', () => {
 
-function startApp() {
     // 1. 全局变量和初始化
-    const { Markmap, Transformer, Toolbar, transform } = window.markmap;
-    const transformer = new Transformer();
+    // 根据官方文档，从 window.markmap 中解构
+    const { Markmap, Transformer, Toolbar } = window.markmap;
     
+    // 检查库是否正确加载
+    if (!Markmap || !Transformer || !Toolbar) {
+        console.error('Markmap libraries did not load correctly. Check the script tags in your HTML.');
+        return;
+    }
+    
+    // 实例化
+    const transformer = new Transformer();
     const svgEl = document.querySelector('#markmap');
     const markmapInstance = Markmap.create(svgEl, null);
     Toolbar.create(markmapInstance, svgEl);
@@ -15,22 +23,10 @@ function startApp() {
     const editModeToggle = document.getElementById('editModeToggle');
     const saveButton = document.getElementById('saveButton');
 
-    // 测试状态定义
+    // 状态定义
     const STATUS = { UNTESTED: '⚪️', PASS: '✅', FAIL: '❌', BLOCKED: '🟡' };
     const STATUS_CYCLE = [STATUS.UNTESTED, STATUS.PASS, STATUS.FAIL, STATUS.BLOCKED];
-
-    // 当前状态
     let currentStates = {};
-
-    // 初始化UI状态
-    const urlParams = new URLSearchParams(window.location.search);
-    const initialVersion = urlParams.get('version') || 'v1.0.0';
-    const initialUser = urlParams.get('user') || 'default';
-    const initialEditMode = urlParams.get('edit') === 'true';
-
-    userSelector.value = initialUser;
-    versionSelector.value = initialVersion;
-    editModeToggle.checked = initialEditMode;
 
     // 2. 核心函数
     function getBaseUrl() {
@@ -42,7 +38,7 @@ function startApp() {
     async function loadDataAndRender() {
         const version = versionSelector.value;
         const user = userSelector.value;
-
+        
         try {
             const baseUrl = getBaseUrl();
             const markdownUrl = `${baseUrl}/cases/${version}/_index.md?cache_bust=${Date.now()}`;
@@ -54,7 +50,7 @@ function startApp() {
                 user !== 'default' ? fetch(resultsUrl, fetchOptions) : Promise.resolve(null)
             ]);
 
-            if (!mdResponse.ok) throw new Error(`无法加载用例文件 (${mdResponse.status})`);
+            if (!mdResponse.ok) throw new Error(`无法加载用例文件: ${mdResponse.statusText}`);
             let markdownText = await mdResponse.text();
             
             if (!markdownText.trim()) {
@@ -68,7 +64,6 @@ function startApp() {
             
             markmapInstance.setData(root);
             await markmapInstance.fit();
-
             applyStatesToUI();
 
         } catch (error) {
@@ -97,21 +92,18 @@ function startApp() {
         const d3 = window.d3;
         
         if (!markmapInstance || !markmapInstance.svg) return;
-        
-        console.log(`Applying UI states. Edit mode: ${isEditMode}`);
 
         markmapInstance.svg.selectAll('g.markmap-node').each(function(nodeData) {
             const element = d3.select(this);
             const textElement = element.select('text');
-            const originalText = nodeData.content; // This is the raw markdown content
-            
-            // We need to parse the ID from the raw content, not the displayed text
+            const originalTextWithMaybeStatus = textElement.text();
+            const originalText = nodeData.content.replace(/^[⚪️✅❌🟡]\s*/, '');
+
             const match = originalText.match(/\[([A-Z0-9-]+)\]/);
             if (!match) return;
             const caseId = match[1];
 
-            element.on('click', null); // Clear previous handlers
-            element.style('cursor', 'default');
+            element.on('click', null).style('cursor', 'default');
             
             if (isEditMode && currentUser !== 'default') {
                 element.style('cursor', 'pointer');
@@ -123,23 +115,19 @@ function startApp() {
                     const newStatus = STATUS_CYCLE[(currentIndex + 1) % STATUS_CYCLE.length];
                     
                     currentStates[caseId] = newStatus;
-
-                    // Re-render the single node's text
-                    const currentDisplayedText = textElement.text();
-                    textElement.text(currentDisplayedText.replace(oldStatus, newStatus));
+                    textElement.text(originalTextWithMaybeStatus.replace(oldStatus, newStatus));
                 });
             }
         });
     }
 
     function saveStatesToGitHub() {
-        // ... (this function remains the same as before)
         const currentUser = userSelector.value;
         const currentVersion = versionSelector.value;
 
         if (currentUser === 'default') {
             const msg = '请先选择一个测试员';
-            (window.tt && window.tt.showToast) ? tt.showToast({ title: msg, icon: 'fail' }) : alert(msg);
+            (window.tt && tt.showToast) ? tt.showToast({ title: msg, icon: 'fail' }) : alert(msg);
             return;
         }
 
@@ -166,35 +154,32 @@ function startApp() {
         }
     }
 
-    // 3. 事件监听器 (使用页面重载)
-    function navigate() {
-        const params = new URLSearchParams();
-        params.set('version', versionSelector.value);
-        params.set('user', userSelector.value);
-        if (editModeToggle.checked) {
-            params.set('edit', 'true');
-        }
-        window.location.search = params.toString();
+    // --- 事件监听器 (动态更新，不刷新页面) ---
+    async function handleSelectionChange() {
+        await loadDataAndRender();
+        saveButton.classList.toggle('hidden', !(editModeToggle.checked && userSelector.value !== 'default'));
     }
 
-    userSelector.addEventListener('change', navigate);
-    versionSelector.addEventListener('change', navigate);
-    editModeToggle.addEventListener('change', navigate);
+    userSelector.addEventListener('change', handleSelectionChange);
+    versionSelector.addEventListener('change', handleSelectionChange);
+    
+    editModeToggle.addEventListener('change', () => {
+        saveButton.classList.toggle('hidden', !(editModeToggle.checked && userSelector.value !== 'default'));
+        applyStatesToUI();
+    });
+
     saveButton.addEventListener('click', saveStatesToGitHub);
 
-    // 4. 启动应用
-    loadDataAndRender();
-}
+    // --- 启动应用 ---
+    // 读取 URL 参数并设置初始值
+    const urlParams = new URLSearchParams(window.location.search);
+    const version = urlParams.get('version');
+    const user = urlParams.get('user');
+    const edit = urlParams.get('edit');
+    if (version) versionSelector.value = version;
+    if (user) userSelector.value = user;
+    if (edit === 'true') editModeToggle.checked = true;
 
-// ---- Polling Check ----
-// This is the most robust way to ensure libraries are ready.
-const checkInterval = setInterval(() => {
-    // Check if all required objects and methods are available
-    if (window.markmap && window.markmap.Markmap && window.markmap.Transformer && window.d3) {
-        clearInterval(checkInterval); // Stop checking
-        console.log("Markmap and D3 are ready. Initializing the app.");
-        startApp(); // Run the main application logic
-    } else {
-        console.log("Waiting for libraries to load...");
-    }
-}, 50); // Check every 50ms
+    // 初始加载
+    handleSelectionChange();
+});

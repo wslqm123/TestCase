@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>产品测试用例平台</title>
-    <!-- 引入 Toolbar 的样式 -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/markmap-toolbar@0.16.1/dist/style.css">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -40,13 +39,21 @@
     </div>
 
     <div class="content">
-        <!-- 容器就是一个普通的 SVG -->
         <svg id="markmap"></svg>
     </div>
 
-    <!-- 脚本加载顺序: d3 -> markmap-view -> markmap-toolbar -> 飞书 -> 我们的脚本 -->
+    <!-- 
+      正确的脚本加载顺序
+      1. d3.js (markmap-view 的依赖)
+      2. markmap-lib.js (提供 Transformer)
+      3. markmap-view.js (提供 Markmap 渲染器)
+      4. markmap-toolbar.js (提供 Toolbar)
+      5. 飞书 JSSDK
+      6. 我们自己的 script.js
+    -->
     <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.14.3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.14.4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.14.4"></script>
     <script src="https://cdn.jsdelivr.net/npm/markmap-toolbar@0.16.1"></script>
     <script src="https://lf3-cdn-tos.bytescm.com/obj/static/ee/invoke/js-sdk/1.2.0/js-sdk.js"></script>
     <script src="script.js"></script>
