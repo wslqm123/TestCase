@@ -42,15 +42,10 @@
     </div>
 
     <!-- 
-      脚本加载顺序至关重要
-      1. d3: markmap-view 的依赖
-      2. markmap-lib: 提供 transform 功能
-      3. markmap-view: 提供 Markmap 渲染功能
-      4. 飞书 JSSDK
-      5. 我们自己的脚本
+      重要：只引入 markmap-view 即可，它包含了所需的所有功能。
+      d3 是依赖，需要放在前面。
     -->
     <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-    <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.14.3"></script>  <!-- 新增的！ -->
     <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.14.3"></script>
     <script src="https://lf3-cdn-tos.bytescm.com/obj/static/ee/invoke/js-sdk/1.2.0/js-sdk.js"></script>
     <script src="script.js"></script>
