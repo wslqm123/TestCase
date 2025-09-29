@@ -1,11 +1,14 @@
 // docs/script.js
 
+// 使用 window.onload 确保所有外部资源（JS库）都已加载完毕
 window.onload = () => {
     // 1. 全局变量和初始化
     const { Markmap, Transformer, Toolbar } = window.markmap;
     
-    if (!Markmap || !Transformer || !Toolbar) {
+    // 检查库是否正确加载
+    if (!Markmap || !Transformer || !Toolbar || !window.d3) {
         console.error('Markmap libraries did not load correctly.');
+        document.body.innerHTML = '<h1>Error: Markmap or D3 library failed to load. Please check network and script tags.</h1>';
         return;
     }
     
@@ -14,11 +17,13 @@ window.onload = () => {
     const markmapInstance = Markmap.create(svgEl, null);
     Toolbar.create(markmapInstance, svgEl);
 
+    // DOM元素
     const userSelector = document.getElementById('userSelector');
     const versionSelector = document.getElementById('versionSelector');
     const editModeToggle = document.getElementById('editModeToggle');
     const saveButton = document.getElementById('saveButton');
 
+    // 状态定义
     const STATUS = { UNTESTED: '⚪️', PASS: '✅', FAIL: '❌', BLOCKED: '🟡' };
     const STATUS_CYCLE = [STATUS.UNTESTED, STATUS.PASS, STATUS.FAIL, STATUS.BLOCKED];
     let currentStates = {};
@@ -54,13 +59,12 @@ window.onload = () => {
             
             currentStates = (stateResponse && stateResponse.ok) ? await stateResponse.json() : {};
             
-            // 注意：我们现在渲染的是未经处理的原始Markdown
+            // 渲染的是原始Markdown，状态在applyStatesAndInteractivity中添加
             const { root, features } = transformer.transform(markdownText);
             
             markmapInstance.setData(root, { ...features });
             await markmapInstance.fit();
             
-            // 渲染完成后，再用 applyStatesAndInteractivity 来处理所有UI和交互
             applyStatesAndInteractivity();
 
         } catch (error) {
@@ -70,7 +74,7 @@ window.onload = () => {
             await markmapInstance.fit();
         }
     }
-
+    
     // 新函数：合并了状态显示和事件绑定的所有逻辑
     function applyStatesAndInteractivity() {
         const isEditMode = editModeToggle.checked;
@@ -79,7 +83,7 @@ window.onload = () => {
         
         if (!markmapInstance || !markmapInstance.svg) return;
         
-        console.log(`Applying states and interactivity. Edit mode: ${isEditMode}`);
+        console.log(`Applying states and interactivity. Edit mode: ${isEditMode}, User: ${currentUser}`);
 
         markmapInstance.svg.selectAll('g.markmap-node').each(function(nodeData) {
             const element = d3.select(this);
@@ -89,20 +93,17 @@ window.onload = () => {
 
             const originalText = nodeData.content;
             const match = originalText.match(/\[([A-Z0-9-]+)\]/);
-            if (!match) return; // 只处理包含ID的节点
+            if (!match) return; 
 
             const caseId = match[1];
             const currentStatus = currentStates[caseId] || STATUS.UNTESTED;
             
-            // 更新文本内容
             textElement.text(`${currentStatus} ${originalText}`);
 
-            // 移除旧事件，设置默认样式
-            element.on('click', null).style('cursor', 'default').classed('editable-node', false);
+            element.on('click', null).style('cursor', 'default');
             
-            // 如果是编辑模式，添加样式和点击事件
             if (isEditMode && currentUser !== 'default') {
-                element.classed('editable-node', true).style('cursor', 'pointer');
+                element.style('cursor', 'pointer');
                 
                 element.on('click', function(event) {
                     event.stopPropagation();
@@ -113,7 +114,6 @@ window.onload = () => {
                     
                     currentStates[caseId] = newStatus;
                     
-                    // 直接更新文本节点的显示
                     textElement.text(`${newStatus} ${originalText}`);
                 });
             }
@@ -176,7 +176,8 @@ window.onload = () => {
     // --- 启动应用 ---
     const urlParams = new URLSearchParams(window.location.search);
     const version = urlParams.get('version');
-    const user = urlP.get('user');
+    // ** 这里的 urlP 已经修正为 urlParams **
+    const user = urlParams.get('user'); 
     const edit = urlParams.get('edit');
     if (version) versionSelector.value = version;
     if (user) userSelector.value = user;
