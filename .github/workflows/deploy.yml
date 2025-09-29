@@ -2,96 +2,72 @@
 name: Build and Deploy Test Cases
 
 on:
-  # 在推送到 main 分支时运行
   push:
     branches:
       - main
-  # 允许手动从 Actions 选项卡运行此工作流程
   workflow_dispatch:
 
-# 设置 GITHUB_TOKEN 的权限以允许部署到 GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# 只允许一个并发部署，会取消正在进行中但尚未完成的旧部署
-# 这是推荐的做法，以避免部署竞态条件
 concurrency:
   group: "pages"
   cancel-in-progress: true
 
 jobs:
-  # 构建任务
   build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.build_step.outputs.version }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4 # 使用最新的 checkout action
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4 # 使用最新的 setup-node action
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'npm' # 启用 npm 缓存
+
+      - name: Install Dependencies
+        run: npm install
 
       - name: Build Test Case Index File
-        id: build
+        id: build_step
         run: |
-          # 动态获取最新的版本目录名，例如 "v1.0.0"
           LATEST_VERSION_DIR_NAME=$(ls -v cases | tail -n 1)
           echo "Building for version: $LATEST_VERSION_DIR_NAME"
-          
-          # 执行构建脚本
           node scripts/build.js $LATEST_VERSION_DIR_NAME
-          
-          # 将版本号设置为一个输出，方便后续步骤使用
           echo "version=${LATEST_VERSION_DIR_NAME}" >> $GITHUB_OUTPUT
 
       - name: Prepare Deployment Artifact
         run: |
-          # 创建一个临时的部署目录，这是最干净的方式
-          mkdir -p public/cases public/results
-          
-          # 复制网页核心文件到部署目录
-          cp docs/index.html docs/script.js docs/style.css public/
-          
-          # 复制测试用例数据到部署目录
-          cp -r cases/* public/cases/
-          
-          # 复制测试结果数据 (如果存在)
+          mkdir -p public
+          cp -r docs/* public/
+          cp -r cases public/
           if [ -d "results" ]; then
-            cp -r results/* public/results/
+            cp -r results public/
           fi
-          
-          # 打印出最终要部署的目录结构以供调试
           echo "--- Content of deployment directory (public) ---"
           ls -R public
           echo "-------------------------------------"
 
-      - name: Upload Artifact for Deployment
-        uses: actions/upload-pages-artifact@v3 # 使用 v3 版本
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          # 上传 `public` 目录的内容
           path: ./public
 
-  # 部署任务
   deploy:
-    # 仅在 build 任务成功后运行
     needs: build
-    
-    # 授予部署步骤的权限
     permissions:
       pages: write
       id-token: write
-    
-    # 在 GitHub Pages 提供的特定环境中部署
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-      
     runs-on: ubuntu-latest
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4 # 使用 v4 版本
+        uses: actions/deploy-pages@v4
