@@ -181,4 +181,21 @@ document.addEventListener('DOMContentLoaded', () => {
         versionSelector.addEventListener('change', handleSelectionChange);
         
         editModeToggle.addEventListener('change', () => {
-            handleSelectionChange(); // 切换编辑模式也需要
+            handleSelectionChange(); // 切换编辑模式也需要重新加载，以便更新URL
+        });
+
+        saveButton.addEventListener('click', saveStatesToGitHub);
+
+        // --- 启动应用 ---
+        // 从 URL 参数设置初始值
+        const urlParams = new URLSearchParams(window.location.search);
+        const version = urlParams.get('version');
+        const user = urlParams.get('user');
+        const edit = urlParams.get('edit');
+        if (version) versionSelector.value = version;
+        if (user) userSelector.value = user;
+        if (edit === 'true') editModeToggle.checked = true;
+
+        handleSelectionChange();
+    }
+});
