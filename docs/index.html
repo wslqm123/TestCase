@@ -5,8 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>产品测试用例平台</title>
     <link rel="stylesheet" href="style.css">
-    <!-- 引入 markmap-autoloader，它会处理所有依赖 -->
-    <script src="https://cdn.jsdelivr.net/npm/markmap-autoloader@0.16.1"></script>
 </head>
 <body>
 
@@ -40,21 +38,13 @@
     </div>
 
     <div class="content">
-        <!-- 
-            我们将动态地把 Markdown 文本放在这里
-            autoloader 会自动在这个 div 中寻找 script 标签并渲染成 SVG
-        -->
-        <div id="markmap-container" class="markmap">
-            <!-- 初始加载状态 -->
-            <script type="text/template">
-                # 正在加载测试用例...
-            </script>
-        </div>
+        <svg id="markmap"></svg>
     </div>
 
-    <!-- 飞书 JSSDK -->
+    <!-- 确保加载顺序: d3 -> markmap -> feishu -> 我们的脚本 -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.14.3"></script>
     <script src="https://lf3-cdn-tos.bytescm.com/obj/static/ee/invoke/js-sdk/1.2.0/js-sdk.js"></script>
-    <!-- 我们自己的脚本，现在放在最后 -->
     <script src="script.js"></script>
 </body>
 </html>

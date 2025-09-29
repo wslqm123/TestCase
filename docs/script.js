@@ -1,56 +1,66 @@
-document.addEventListener('DOMContentLoaded', () => {
-    // 1. 全局变量和 DOM 元素
-    const userSelector = document.getElementById('userselector');
+// docs/script.js
+
+// 将所有代码包装在一个函数中，由 window.onload 调用
+function initializeTestApp() {
+    // 1. 全局变量和初始化
+    // 此时 window.markmap 必定已加载
+    const { Markmap, Transformer } = window.markmap;
+    const transformer = new Transformer();
+    const markmapInstance = Markmap.create('#markmap', null);
+
+    // DOM元素获取 (已修正 ID)
+    const userSelector = document.getElementById('userSelector');
     const versionSelector = document.getElementById('versionSelector');
     const editModeToggle = document.getElementById('editModeToggle');
     const saveButton = document.getElementById('saveButton');
-    const markmapContainer = document.getElementById('markmap-container');
-    
+
+    // 测试状态定义
     const STATUS = { UNTESTED: '⚪️', PASS: '✅', FAIL: '❌', BLOCKED: '🟡' };
     const STATUS_CYCLE = [STATUS.UNTESTED, STATUS.PASS, STATUS.FAIL, STATUS.BLOCKED];
 
+    // 当前状态
     let currentUser = userSelector.value;
     let currentVersion = versionSelector.value;
     let currentStates = {};
 
+    // 2. 核心函数
     function getBaseUrl() {
         const pathParts = window.location.pathname.split('/');
         const repoName = pathParts[1] || '';
-        return window.location.hostname.includes('github.io') ? `/${repoName}` : '';
+        if (window.location.hostname.includes('github.io') && repoName !== 'favicon.ico') {
+            return `/${repoName}`;
+        }
+        return '';
     }
 
     async function loadAndRender() {
         try {
             const baseUrl = getBaseUrl();
             const markdownUrl = `${baseUrl}/cases/${currentVersion}/_index.md?cache_bust=${new Date().getTime()}`;
-            console.log(`[loadAndRender] Fetching markdown from: ${markdownUrl}`);
+            console.log(`Fetching markdown from: ${markdownUrl}`);
 
             const response = await fetch(markdownUrl);
-            if (!response.ok) throw new Error(`Failed to fetch ${markdownUrl}. Status: ${response.status}`);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch ${markdownUrl}. Status: ${response.status}`);
+            }
 
             const markdownText = await response.text();
-            if (!markdownText.trim()) throw new Error(`Markdown file for version ${currentVersion} is empty.`);
-            
-            // **核心变化在这里**
-            // 1. 清空容器
-            markmapContainer.innerHTML = '';
-            // 2. 动态创建 SVG 元素，而不是依赖 autoloader 自动创建
-            const svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            svgEl.style.width = '100%';
-            svgEl.style.height = '100%';
-            markmapContainer.appendChild(svgEl);
+            if (!markdownText.trim()) {
+                throw new Error(`Markdown file for version ${currentVersion} is empty.`);
+            }
 
-            // 3. 直接使用 Markmap API 创建和渲染
-            const { root } = window.markmap.transform(markdownText);
-            const mm = window.markmap.Markmap.create(svgEl, null, root);
-            
-            // 4. 加载并应用状态
+            const { root } = transformer.transform(markdownText);
+            markmapInstance.setData(root);
+            await markmapInstance.fit();
+
             await loadUserStates();
-            applyStatesToUI(mm); // 将实例传递下去
+            applyStatesToUI();
 
         } catch (error) {
             console.error("[loadAndRender] Failed:", error);
-            markmapContainer.innerHTML = `<h2>Loading Failed</h2><p>${error.message}</p>`;
+            const { root } = transformer.transform(`# Loading Failed\n\n- ${error.message}`);
+            markmapInstance.setData(root);
+            await markmapInstance.fit();
         }
     }
 
@@ -63,6 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const baseUrl = getBaseUrl();
             const resultsUrl = `${baseUrl}/results/${currentVersion}/${currentUser}.json?cache_bust=${new Date().getTime()}`;
             console.log(`[loadUserStates] Fetching results from: ${resultsUrl}`);
+            
             const response = await fetch(resultsUrl);
             currentStates = response.ok ? await response.json() : {};
         } catch (error) {
@@ -71,7 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function applyStatesToUI(markmapInstance) {
+    function applyStatesToUI() {
         if (!markmapInstance || !markmapInstance.svg) return;
 
         const isEditMode = editModeToggle.checked;
@@ -104,7 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function saveStatesToGitHub() {
         if (currentUser === 'default') {
             const msg = '请先选择一个测试员';
-            (window.tt && tt.showToast) ? tt.showToast({ title: msg, icon: 'fail', duration: 2000 }) : alert(msg);
+            (window.tt && window.tt.showToast) ? tt.showToast({ title: msg, icon: 'fail', duration: 2000 }) : alert(msg);
             return;
         }
 
@@ -131,7 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 事件监听器
+    // 3. 事件监听器
     userSelector.addEventListener('change', (e) => {
         currentUser = e.target.value;
         editModeToggle.checked = false;
@@ -145,24 +156,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     editModeToggle.addEventListener('change', () => {
-        const isEditOn = editModeToggle.checked && currentUser !== 'default';
-        saveButton.classList.toggle('hidden', !isEditOn);
-        
-        // 重新获取 markmap 实例并应用UI，因为每次 loadAndRender 都会重新创建
-        const svgEl = document.querySelector('#markmap-container svg.markmap');
-        if (svgEl && svgEl.__markmap__) {
-            applyStatesToUI(svgEl.__markmap__);
-        }
+        saveButton.classList.toggle('hidden', !(editModeToggle.checked && currentUser !== 'default'));
+        applyStatesToUI();
     });
 
     saveButton.addEventListener('click', saveStatesToGitHub);
 
-    // 初始化页面
-    // 确保所有库加载完毕
-    const checkLibs = setInterval(() => {
-        if (window.markmap && window.markmap.transform && window.markmap.Markmap) {
-            clearInterval(checkLibs);
-            loadAndRender();
-        }
-    }, 100);
-});
+    // 4. 启动应用
+    loadAndRender();
+}
+
+// 使用 window.onload 来确保所有资源 (包括 markmap-view.js) 都加载完毕后再执行我们的代码
+window.onload = initializeTestApp;
