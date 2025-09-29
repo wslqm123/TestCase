@@ -42,13 +42,15 @@
     </div>
 
     <!-- 
-      脚本放在 body 底部加载
-      1. d3 是 markmap-view 的依赖，必须先加载。
-      2. markmap-view 加载并初始化 window.markmap 对象。
-      3. 飞书 JSSDK。
-      4. 最后加载我们自己的 script.js，此时 window.markmap 必定存在。
+      脚本加载顺序至关重要
+      1. d3: markmap-view 的依赖
+      2. markmap-lib: 提供 transform 功能
+      3. markmap-view: 提供 Markmap 渲染功能
+      4. 飞书 JSSDK
+      5. 我们自己的脚本
     -->
     <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.14.3"></script>  <!-- 新增的！ -->
     <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.14.3"></script>
     <script src="https://lf3-cdn-tos.bytescm.com/obj/static/ee/invoke/js-sdk/1.2.0/js-sdk.js"></script>
     <script src="script.js"></script>

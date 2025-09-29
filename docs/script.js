@@ -24,7 +24,6 @@ let currentStates = {};
  */
 function getBaseUrl() {
     const pathParts = window.location.pathname.split('/');
-    // 如果路径是 /repo-name/ or /repo-name/index.html, repoName 是 pathParts[1]
     const repoName = pathParts[1] || '';
     if (window.location.hostname.includes('github.io') && repoName) {
         return `/${repoName}`;
@@ -168,5 +167,4 @@ editModeToggle.addEventListener('change', () => {
 saveButton.addEventListener('click', saveStatesToGitHub);
 
 // 4. 初始化页面
-// 因为脚本在最后加载，此时可以直接调用初始化函数
 loadAndRender();
