@@ -1,9 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
     // 1. 全局变量和初始化
-    const { Transformer, Markmap } = window.markmap;
+    // 正确地从 window.markmap 中解构出 Markmap 类和 transform 函数
+    const { Markmap, transform } = window.markmap;
 
-    // Create instances of the Transformer and Markmap
-    const transformer = new Transformer();
+    // 创建 Markmap 实例
     const markmapInstance = Markmap.create('#markmap', null);
 
     // DOM元素获取
@@ -32,7 +32,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error(`Could not find test cases for version ${currentVersion}. Check if the file exists.`);
             
             const markdownText = await response.text();
-            const { root } = transformer.transform(markdownText);
+            
+            // 直接使用解构出来的 transform 函数
+            const { root } = transform(markdownText);
             
             markmapInstance.setData(root);
             await markmapInstance.fit(); // 调整视图以适应内容
@@ -45,7 +47,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (error) {
             console.error("Load failed:", error);
-            const { root } = transformer.transform(`# Loading Failed\n\n- ${error.message}`);
+            // 直接使用解构出来的 transform 函数
+            const { root } = transform(`# Loading Failed\n\n- ${error.message}`);
             markmapInstance.setData(root);
             await markmapInstance.fit();
         }
@@ -116,8 +119,8 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function saveStatesToGitHub() {
         if (currentUser === 'default') {
-            if (window.tt) {
-                tt.showToast({ title: '请先选择一个测试员', icon: 'fail' });
+            if (window.tt && window.tt.showToast) {
+                tt.showToast({ title: '请先选择一个测试员', icon: 'fail', duration: 2000 });
             } else {
                 alert('请先选择一个测试员');
             }
@@ -143,7 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // 简单模拟成功提示
             setTimeout(() => {
-                tt.showToast({ title: '保存指令已发送', icon: 'success' });
+                tt.showToast({ title: '保存指令已发送', icon: 'success', duration: 2000 });
                 saveButton.disabled = false;
                 saveButton.textContent = '保存更改';
             }, 1500);
