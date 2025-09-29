@@ -1,194 +1,109 @@
-// docs/script.js
-
-// Use window.onload to ensure all external resources (JS libraries, images, etc.) are fully loaded.
-window.onload = () => {
-    // 1. SETUP: Check for libraries and initialize core components
-    const { Markmap, Transformer, Toolbar } = window.markmap;
-    
-    if (!Markmap || !Transformer || !Toolbar || !window.d3) {
-        console.error('Markmap libraries did not load correctly. Check the script tags in your HTML.');
-        document.body.innerHTML = '<h1>Error: Markmap or D3 library failed to load. Please check network and script tags.</h1>';
+window.addEventListener('load', () => {
+    // 确保库已加载
+    if (!window.markmap || !window.markmap.Markmap) {
+        console.error('Markmap is not loaded!');
         return;
     }
-    
-    const transformer = new Transformer();
-    const svgEl = document.querySelector('#markmap');
-    const markmapInstance = Markmap.create(svgEl, null);
-    Toolbar.create(markmapInstance, svgEl);
 
-    // --- DOM Elements ---
+    // 1. 初始化
+    const { Markmap, Transformer, Toolbar } = window.markmap;
+    const transformer = new Transformer();
+    const mm = Markmap.create('#markmap');
+    const toolbar = Toolbar.create(mm, document.querySelector('#markmap'));
     const userSelector = document.getElementById('userSelector');
     const versionSelector = document.getElementById('versionSelector');
     const editModeToggle = document.getElementById('editModeToggle');
     const saveButton = document.getElementById('saveButton');
-
-    // --- State & Constants ---
+    
     const STATUS = { UNTESTED: '⚪️', PASS: '✅', FAIL: '❌', BLOCKED: '🟡' };
     const STATUS_CYCLE = [STATUS.UNTESTED, STATUS.PASS, STATUS.FAIL, STATUS.BLOCKED];
     let currentStates = {};
 
-    // 2. CORE FUNCTIONS
     function getBaseUrl() {
         const pathParts = window.location.pathname.split('/');
         const repoName = pathParts[1] === 'TestCase' ? '/TestCase' : '';
         return window.location.hostname.includes('github.io') ? repoName : '';
     }
 
-    async function loadDataAndRender() {
+    // 2. 核心函数
+    async function updateView() {
         const version = versionSelector.value;
         const user = userSelector.value;
 
-        try {
-            const baseUrl = getBaseUrl();
-            const markdownUrl = `${baseUrl}/cases/${version}/_index.md?cache_bust=${Date.now()}`;
-            const resultsUrl = `${baseUrl}/results/${version}/${user}.json?cache_bust=${Date.now()}`;
-            const fetchOptions = { cache: 'no-cache' };
-
-            const [mdResponse, stateResponse] = await Promise.all([
-                fetch(markdownUrl, fetchOptions),
-                user !== 'default' ? fetch(resultsUrl, fetchOptions) : Promise.resolve(null)
-            ]);
-
-            if (!mdResponse.ok) throw new Error(`Cannot load test case file: ${mdResponse.statusText}`);
-            let markdownText = await mdResponse.text();
-            
-            if (!markdownText.trim()) {
-                markdownText = "# (Empty)\n- No test cases found for this version.";
-            }
-            
-            currentStates = (stateResponse && stateResponse.ok) ? await stateResponse.json() : {};
-            
-            const { root, features } = transformer.transform(markdownText);
-            
-            markmapInstance.setData(root, { ...features });
-            await markmapInstance.fit(); // This promise resolves when rendering/animation is complete
-            
-            // Now that we are sure rendering is done, we can apply interactivity
-            applyStatesAndInteractivity();
-
-        } catch (error) {
-            console.error("Failed to load or render:", error);
-            const { root } = transformer.transform(`# Load Failed\n\n- ${error.message}`);
-            markmapInstance.setData(root);
-            await markmapInstance.fit();
+        // 获取数据
+        const baseUrl = getBaseUrl();
+        const mdRes = await fetch(`${baseUrl}/cases/${version}/_index.md?ts=${Date.now()}`, { cache: 'no-cache' });
+        const markdown = await mdRes.text();
+        
+        if (user !== 'default') {
+            const stateRes = await fetch(`${baseUrl}/results/${version}/${user}.json?ts=${Date.now()}`, { cache: 'no-cache' });
+            currentStates = stateRes.ok ? await stateRes.json() : {};
+        } else {
+            currentStates = {};
         }
+
+        // 转换并渲染
+        const { root } = transformer.transform(markdown);
+        mm.setData(root);
+        await mm.fit(); // 等待渲染完成
+        updateInteractions(); // 渲染完成后添加交互
     }
     
-    function applyStatesAndInteractivity() {
-        const isEditMode = editModeToggle.checked;
-        const currentUser = userSelector.value;
+    function updateInteractions() {
+        const isEdit = editModeToggle.checked;
+        const user = userSelector.value;
         const d3 = window.d3;
         
-        if (!markmapInstance || !markmapInstance.svg) return;
-        
-        console.log(`Applying states and interactivity. Edit mode: ${isEditMode}, User: ${currentUser}`);
-
-        markmapInstance.svg.selectAll('g.markmap-node').each(function(nodeData) {
+        d3.select('#markmap').selectAll('g.markmap-node').each(function(nodeData) {
             const element = d3.select(this);
-            const textElement = element.select('text');
+            const textEl = element.select('text');
+            if (textEl.empty()) return;
 
-            if (textElement.empty()) return;
-
-            const originalText = nodeData.content;
-            const match = originalText.match(/\[([A-Z0-9-]+)\]/);
-            if (!match) return; 
-
+            const originalContent = nodeData.content;
+            const match = originalContent.match(/\[([A-Z0-9-]+)\]/);
+            if (!match) return;
             const caseId = match[1];
-            const currentStatus = currentStates[caseId] || STATUS.UNTESTED;
-            
-            // Set the text content with the status emoji
-            textElement.text(`${currentStatus} ${originalText}`);
 
-            // Clear any previous click handlers and reset styles
+            const status = currentStates[caseId] || STATUS.UNTESTED;
+            textEl.text(`${status} ${originalContent}`);
+
             element.on('click', null).style('cursor', 'default');
-            
-            // If in edit mode, add the click handler and pointer cursor
-            if (isEditMode && currentUser !== 'default') {
-                element.style('cursor', 'pointer');
-                
-                element.on('click', function(event) {
+
+            if (isEdit && user !== 'default') {
+                element.style('cursor', 'pointer').on('click', event => {
                     event.stopPropagation();
-                    
                     const oldStatus = currentStates[caseId] || STATUS.UNTESTED;
-                    const currentIndex = STATUS_CYCLE.indexOf(oldStatus);
-                    const newStatus = STATUS_CYCLE[(currentIndex + 1) % STATUS_CYCLE.length];
-                    
-                    currentStates[caseId] = newStatus; // Update state in memory
-                    
-                    // Update the text on the screen immediately
-                    textElement.text(`${newStatus} ${originalText}`);
+                    const newIndex = (STATUS_CYCLE.indexOf(oldStatus) + 1) % STATUS_CYCLE.length;
+                    const newStatus = STATUS_CYCLE[newIndex];
+                    currentStates[caseId] = newStatus;
+                    textEl.text(`${newStatus} ${originalContent}`);
                 });
             }
         });
     }
 
-    function saveStatesToGitHub() {
-        const currentUser = userSelector.value;
-        const currentVersion = versionSelector.value;
-
-        if (currentUser === 'default') {
-            const msg = 'Please select a tester to save progress.';
-            (window.tt && window.tt.showToast) ? tt.showToast({ title: msg, icon: 'fail' }) : alert(msg);
-            return;
-        }
-
-        saveButton.disabled = true;
-        saveButton.textContent = 'Saving...';
-        
-        const messagePayload = {
-            action: 'saveData',
-            payload: { version: currentVersion, user: currentUser, content: currentStates, message: `[Test] ${currentUser} updated results for ${currentVersion}` }
-        };
-
-        if (window.tt && window.tt.miniProgram && window.tt.miniProgram.postMessage) {
-            window.tt.miniProgram.postMessage({ data: messagePayload });
-            setTimeout(() => {
-                if(window.tt.showToast) tt.showToast({ title: 'Save command sent', icon: 'success' });
-                saveButton.disabled = false;
-                saveButton.textContent = 'Save Changes';
-            }, 1500);
-        } else {
-            console.log("Mocking save call:", messagePayload);
-            alert('Save function is only available in the Feishu app. Data printed to console.');
-            saveButton.disabled = false;
-            saveButton.textContent = 'Save Changes';
-        }
+    function handleUIChange() {
+        const isEdit = editModeToggle.checked;
+        const user = userSelector.value;
+        saveButton.classList.toggle('hidden', !isEdit || user === 'default');
+        updateInteractions();
     }
-
-    // --- 3. Event Listeners ---
-    function navigate() {
-        const params = new URLSearchParams();
-        params.set('version', versionSelector.value);
-        params.set('user', userSelector.value);
-        if (editModeToggle.checked) {
-            params.set('edit', 'true');
-        }
-        window.location.search = params.toString();
-    }
-
-    userSelector.addEventListener('change', navigate);
-    versionSelector.addEventListener('change', navigate);
-    editModeToggle.addEventListener('change', navigate);
-    saveButton.addEventListener('click', saveStatesToGitHub);
-
-    // --- 4. Initial Load ---
-    const urlParams = new URLSearchParams(window.location.search);
-    const version = urlParams.get('version');
-    const user = urlParams.get('user');
-    const edit = urlParams.get('edit');
-    if (version) versionSelector.value = version;
-    if (user) userSelector.value = user;
-    if (edit === 'true') editModeToggle.checked = true;
     
-    loadDataAndRender();
+    // 3. 事件绑定
+    versionSelector.addEventListener('change', updateView);
+    userSelector.addEventListener('change', updateView);
+    editModeToggle.addEventListener('change', handleUIChange);
+    saveButton.addEventListener('click', () => {
+        // 保存逻辑...
+        console.log("Saving states:", currentStates);
+        alert("保存逻辑已触发，请查看控制台。");
+    });
     
-    // --- 5. Expose for Debugging ---
-    // This makes the function available in the browser console.
-    window.debug = {
-        applyStatesAndInteractivity,
-        loadDataAndRender,
-        getState: () => currentStates,
-        getInstance: () => markmapInstance
-    };
-    console.log("Debug functions available under `window.debug` object.");
-};
+    // 4. 初始加载
+    const params = new URLSearchParams(window.location.search);
+    versionSelector.value = params.get('version') || 'v1.0.0';
+    userSelector.value = params.get('user') || 'default';
+    editModeToggle.checked = params.get('edit') === 'true';
+
+    updateView(); // 首次加载
+});
