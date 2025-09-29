@@ -4,13 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>产品测试用例平台</title>
-    <!-- 引入 Toolbar 的样式，它会美化工具栏 -->
+    <!-- 引入 Toolbar 的样式 -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/markmap-toolbar@0.16.1/dist/style.css">
     <link rel="stylesheet" href="style.css">
-    <!-- 引入 markmap-autoloader，它会加载所有依赖并自动渲染 -->
-    <script src="https://cdn.jsdelivr.net/npm/markmap-autoloader@0.16.1"></script>
 </head>
 <body>
+
     <div class="toolbar">
         <h1>测试用例</h1>
         <div class="controls">
@@ -18,7 +17,6 @@
                 <label for="versionSelector">版本:</label>
                 <select id="versionSelector">
                     <option value="v1.0.0">v1.0.0</option>
-                    <!-- 可以在这里添加更多版本 -->
                 </select>
             </div>
             <div class="control-group">
@@ -42,21 +40,16 @@
     </div>
 
     <div class="content">
-        <!-- 
-            重要：
-            1. class="markmap" 是必须的，autoloader 会识别它。
-            2. 我们将动态地用 JS 替换这里面的 <script> 标签。
-        -->
-        <div id="markmap-container" class="markmap">
-            <script type="text/template">
-                # 正在加载测试用例...
-            </script>
-        </div>
+        <!-- 容器就是一个普通的 SVG -->
+        <svg id="markmap"></svg>
     </div>
 
-    <!-- 飞书 JSSDK -->
+    <!-- 脚本加载顺序: d3 -> markmap-view -> markmap-toolbar -> 飞书 -> 我们的脚本 -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.14.3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-toolbar@0.16.1"></script>
     <script src="https://lf3-cdn-tos.bytescm.com/obj/static/ee/invoke/js-sdk/1.2.0/js-sdk.js"></script>
-    <!-- 我们的自定义脚本 -->
     <script src="script.js"></script>
+
 </body>
 </html>
