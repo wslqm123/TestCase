@@ -1,18 +1,12 @@
-// docs/script.js
+// 确保在DOM加载完成后执行
+document.addEventListener('DOMContentLoaded', () => {
 
-// 将所有代码包装在一个函数中，由 window.onload 调用
-function initializeTestApp() {
-    // 1. 全局变量和初始化
-    // 此时 window.markmap 必定已加载
-    const { Markmap, Transformer } = window.markmap;
-    const transformer = new Transformer();
-    const markmapInstance = Markmap.create('#markmap', null);
-
-    // DOM元素获取 (已修正 ID)
+    // 1. DOM元素获取
     const userSelector = document.getElementById('userSelector');
     const versionSelector = document.getElementById('versionSelector');
     const editModeToggle = document.getElementById('editModeToggle');
     const saveButton = document.getElementById('saveButton');
+    const markmapContainer = document.getElementById('markmap-container');
 
     // 测试状态定义
     const STATUS = { UNTESTED: '⚪️', PASS: '✅', FAIL: '❌', BLOCKED: '🟡' };
@@ -22,45 +16,61 @@ function initializeTestApp() {
     let currentUser = userSelector.value;
     let currentVersion = versionSelector.value;
     let currentStates = {};
+    let markmapInstance; // 全局变量，用于存储当前markmap实例
 
     // 2. 核心函数
     function getBaseUrl() {
         const pathParts = window.location.pathname.split('/');
         const repoName = pathParts[1] || '';
-        if (window.location.hostname.includes('github.io') && repoName !== 'favicon.ico') {
+        if (window.location.hostname.includes('github.io') && repoName) {
             return `/${repoName}`;
         }
         return '';
     }
 
     async function loadAndRender() {
+        // 清空容器，准备重新渲染
+        markmapContainer.innerHTML = ''; 
+
         try {
             const baseUrl = getBaseUrl();
             const markdownUrl = `${baseUrl}/cases/${currentVersion}/_index.md?cache_bust=${new Date().getTime()}`;
-            console.log(`Fetching markdown from: ${markdownUrl}`);
+            console.log(`[loadAndRender] Fetching markdown from: ${markdownUrl}`);
 
             const response = await fetch(markdownUrl);
-            if (!response.ok) {
-                throw new Error(`Failed to fetch ${markdownUrl}. Status: ${response.status}`);
-            }
+            if (!response.ok) throw new Error(`Failed to fetch ${markdownUrl}. Status: ${response.status}`);
 
             const markdownText = await response.text();
-            if (!markdownText.trim()) {
-                throw new Error(`Markdown file for version ${currentVersion} is empty.`);
+            if (!markdownText.trim()) throw new Error(`Markdown file for version ${currentVersion} is empty.`);
+            
+            // **核心逻辑：让 autoloader 处理一切**
+            // 1. 创建 script 标签并注入 markdown
+            const scriptEl = document.createElement('script');
+            scriptEl.type = 'text/template';
+            scriptEl.textContent = markdownText; // 使用 textContent 以避免 HTML 注入
+            markmapContainer.appendChild(scriptEl);
+            
+            // 2. autoloader 会自动发现并渲染 .markmap > script 元素。
+            // 渲染是异步的，我们需要找到渲染后的实例。
+            // window.markmap.autoLoader.renderAll() 确实可以做到这一点。
+            const markmaps = await window.markmap.autoLoader.renderAll();
+            
+            if (markmaps && markmaps.length > 0) {
+                markmapInstance = markmaps.find(m => m.el.parentElement === markmapContainer);
+                if (markmapInstance) {
+                    await loadUserStates();
+                    applyStatesToUI();
+                } else {
+                     throw new Error('Markmap instance not found after render.');
+                }
+            } else {
+                 throw new Error('markmap.autoLoader.renderAll() did not return any instances.');
             }
-
-            const { root } = transformer.transform(markdownText);
-            markmapInstance.setData(root);
-            await markmapInstance.fit();
-
-            await loadUserStates();
-            applyStatesToUI();
 
         } catch (error) {
             console.error("[loadAndRender] Failed:", error);
-            const { root } = transformer.transform(`# Loading Failed\n\n- ${error.message}`);
-            markmapInstance.setData(root);
-            await markmapInstance.fit();
+            markmapContainer.innerHTML = `<script type="text/template"># 加载失败\n\n- ${error.message}</script>`;
+            await window.markmap.autoLoader.renderAll();
         }
     }
 
@@ -88,7 +98,8 @@ function initializeTestApp() {
         const isEditMode = editModeToggle.checked;
         const d3 = window.d3;
         
-        markmapInstance.svg.selectAll('g.markmap-node').each(function(nodeData) {
+        // 使用 d3 选择器来操作 SVG 元素
+        d3.select(markmapInstance.svg.node()).selectAll('g.markmap-node').each(function(nodeData) {
             const element = d3.select(this);
             const textElement = element.select('text');
             const originalText = nodeData.content;
@@ -107,7 +118,7 @@ function initializeTestApp() {
                 const currentIndex = STATUS_CYCLE.indexOf(oldStatus);
                 const newStatus = STATUS_CYCLE[(currentIndex + 1) % STATUS_CYCLE.length];
                 currentStates[caseId] = newStatus;
-                d3.select(this).select('text').text(`${newStatus} ${originalText}`);
+                textElement.text(`${newStatus} ${originalText}`);
             } : null);
         });
     }
@@ -115,7 +126,7 @@ function initializeTestApp() {
     function saveStatesToGitHub() {
         if (currentUser === 'default') {
             const msg = '请先选择一个测试员';
-            (window.tt && window.tt.showToast) ? tt.showToast({ title: msg, icon: 'fail', duration: 2000 }) : alert(msg);
+            (window.tt && tt.showToast) ? tt.showToast({ title: msg, icon: 'fail', duration: 2000 }) : alert(msg);
             return;
         }
 
@@ -162,9 +173,7 @@ function initializeTestApp() {
 
     saveButton.addEventListener('click', saveStatesToGitHub);
 
-    // 4. 启动应用
+    // 4. 初始化页面
+    // autoloader 会在 DOM 加载后自动运行一次，所以我们在这里调用 loadAndRender 来加载我们的动态数据
     loadAndRender();
-}
-
-// 使用 window.onload 来确保所有资源 (包括 markmap-view.js) 都加载完毕后再执行我们的代码
-window.onload = initializeTestApp;
+});

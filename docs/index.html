@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>产品测试用例平台</title>
     <link rel="stylesheet" href="style.css">
+    <!-- 唯一需要的 Markmap 脚本 -->
+    <script src="https://cdn.jsdelivr.net/npm/markmap-autoloader@0.16.1"></script>
 </head>
 <body>
 
@@ -38,13 +40,13 @@
     </div>
 
     <div class="content">
-        <svg id="markmap"></svg>
+        <!-- autoloader 会自动将内容渲染到这个 div 中 -->
+        <div id="markmap-container" class="markmap"></div>
     </div>
 
-    <!-- 确保加载顺序: d3 -> markmap -> feishu -> 我们的脚本 -->
-    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.14.3"></script>
+    <!-- 飞书 JSSDK -->
     <script src="https://lf3-cdn-tos.bytescm.com/obj/static/ee/invoke/js-sdk/1.2.0/js-sdk.js"></script>
+    <!-- 我们自己的脚本 -->
     <script src="script.js"></script>
 </body>
 </html>
