@@ -7,7 +7,6 @@
         // 从全局的 window.markmap 对象中获取构造函数和工具
         const Transformer = window.markmap.Transformer;
         const Markmap = window.markmap.Markmap;
-        const { el } = window.markmap.Toolbar; // 如果未来要添加工具栏，可以这样获取
 
         // 实例化 Transformer 和 Markmap
         const transformer = new Transformer();
@@ -89,7 +88,7 @@
                 const element = d3.select(this);
                 const textElement = element.select('text');
                 const originalText = node.data.content;
-                const match = originalText.match(/\[([A-Z0-9-]+)\]/);
+                const match = originalText.match(/\[([A-Z0-S]+-\d+)\]/); // 修正了正则表达式以匹配您的ID格式
                 if (!match) return;
 
                 const caseId = match[1];
