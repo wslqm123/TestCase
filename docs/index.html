@@ -4,8 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>产品测试用例平台</title>
+    <!-- 引入 Toolbar 的样式，它会美化工具栏 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/markmap-toolbar@0.16.1/dist/style.css">
     <link rel="stylesheet" href="style.css">
-    <!-- 唯一需要的 Markmap 脚本 -->
+    <!-- 引入 markmap-autoloader，它会加载所有依赖并自动渲染 -->
     <script src="https://cdn.jsdelivr.net/npm/markmap-autoloader@0.16.1"></script>
 </head>
 <body>
@@ -16,6 +18,7 @@
                 <label for="versionSelector">版本:</label>
                 <select id="versionSelector">
                     <option value="v1.0.0">v1.0.0</option>
+                    <!-- 可以在这里添加更多版本 -->
                 </select>
             </div>
             <div class="control-group">
@@ -37,17 +40,23 @@
             <button id="saveButton" class="hidden">保存更改</button>
         </div>
     </div>
+
     <div class="content">
-        <!-- autoloader 将在这里自动渲染 -->
+        <!-- 
+            重要：
+            1. class="markmap" 是必须的，autoloader 会识别它。
+            2. 我们将动态地用 JS 替换这里面的 <script> 标签。
+        -->
         <div id="markmap-container" class="markmap">
             <script type="text/template">
-                # 正在加载...
+                # 正在加载测试用例...
             </script>
         </div>
     </div>
+
     <!-- 飞书 JSSDK -->
     <script src="https://lf3-cdn-tos.bytescm.com/obj/static/ee/invoke/js-sdk/1.2.0/js-sdk.js"></script>
-    <!-- 我们自己的脚本 -->
+    <!-- 我们的自定义脚本 -->
     <script src="script.js"></script>
 </body>
 </html>
