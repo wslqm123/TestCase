@@ -14,8 +14,7 @@
             <div class="control-group">
                 <label for="versionSelector">版本:</label>
                 <select id="versionSelector">
-                    <!-- 版本将由JS动态填充 -->
-                    <option value="v1.0.0">v1.0.0</option> 
+                    <option value="v1.0.0">v1.0.0</option>
                 </select>
             </div>
             <div class="control-group">
@@ -25,7 +24,6 @@
                     <option value="zhangsan">张三</option>
                     <option value="lisi">李四</option>
                     <option value="wangwu">王五</option>
-                    <!-- 根据需要添加更多团队成员 -->
                 </select>
             </div>
             <div class="control-group">
@@ -43,13 +41,17 @@
         <svg id="markmap"></svg>
     </div>
 
-    <!-- 引入 Markmap 核心库 -->
-    <script defer src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/markmap-view@0.14.3"></script>
-    <!-- 引入飞书 JSSDK，用于通信 -->
-    <script defer src="https://lf3-cdn-tos.bytescm.com/obj/static/ee/invoke/js-sdk/1.2.0/js-sdk.js"></script>
-    <!-- 引入我们自己的脚本 -->
-    <script defer src="script.js"></script>
+    <!-- 
+      脚本放在 body 底部加载
+      1. d3 是 markmap-view 的依赖，必须先加载。
+      2. markmap-view 加载并初始化 window.markmap 对象。
+      3. 飞书 JSSDK。
+      4. 最后加载我们自己的 script.js，此时 window.markmap 必定存在。
+    -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.14.3"></script>
+    <script src="https://lf3-cdn-tos.bytescm.com/obj/static/ee/invoke/js-sdk/1.2.0/js-sdk.js"></script>
+    <script src="script.js"></script>
 
 </body>
 </html>
