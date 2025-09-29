@@ -6,6 +6,10 @@ on:
     branches:
       - main  # 当 main 分支有更新时触发
 
+# 新增的部分：授予工作流写入权限
+permissions:
+  contents: write
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -20,9 +24,8 @@ jobs:
           node-version: '18'
 
       - name: Build Test Case Files 🔨
-        # 假设我们要为 cases 目录下的最新版本文件夹生成 _index.md
-        # 这里用一个简单的脚本获取最新的版本号目录名
         run: |
+          # 动态获取最新的版本文件夹名称
           LATEST_VERSION_DIR=$(ls -d cases/*/ | sort -V | tail -n 1 | xargs basename)
           echo "Building for version: $LATEST_VERSION_DIR"
           node scripts/build.js $LATEST_VERSION_DIR
