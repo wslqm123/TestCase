@@ -1,17 +1,16 @@
 document.addEventListener('DOMContentLoaded', () => {
     // 1. 全局变量和初始化
-    const { markmap, mm } = window;
-    const transformer = new markmap.Transformer();
+    const { Transformer, Markmap } = window.markmap;
+
+    // Create instances of the Transformer and Markmap
+    const transformer = new Transformer();
+    const markmapInstance = Markmap.create('#markmap', null);
 
     // DOM元素获取
-    const svgEl = document.getElementById('markmap');
     const userSelector = document.getElementById('userSelector');
     const versionSelector = document.getElementById('versionSelector');
     const editModeToggle = document.getElementById('editModeToggle');
     const saveButton = document.getElementById('saveButton');
-
-    // 初始化 Markmap
-    const markmapInstance = mm.Markmap.create(svgEl, null);
 
     // 测试状态定义
     const STATUS = { UNTESTED: '⚪️', PASS: '✅', FAIL: '❌', BLOCKED: '🟡' };
@@ -30,10 +29,11 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             // 从 GitHub Pages 加载合并后的 Markdown 文件
             const response = await fetch(`cases/${currentVersion}/_index.md?cache_bust=${new Date().getTime()}`);
-            if (!response.ok) throw new Error(`找不到版本 ${currentVersion} 的测试用例文件。`);
+            if (!response.ok) throw new Error(`Could not find test cases for version ${currentVersion}. Check if the file exists.`);
             
             const markdownText = await response.text();
             const { root } = transformer.transform(markdownText);
+            
             markmapInstance.setData(root);
             await markmapInstance.fit(); // 调整视图以适应内容
 
@@ -44,8 +44,10 @@ document.addEventListener('DOMContentLoaded', () => {
             applyStatesToUI();
 
         } catch (error) {
-            console.error("加载失败:", error);
-            markmapInstance.setData(transformer.transform(`# 加载失败\n\n- ${error.message}`).root);
+            console.error("Load failed:", error);
+            const { root } = transformer.transform(`# Loading Failed\n\n- ${error.message}`);
+            markmapInstance.setData(root);
+            await markmapInstance.fit();
         }
     }
 
@@ -65,7 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentStates = {}; // 如果文件不存在或加载失败，则重置
             }
         } catch (error) {
-            console.warn(`无法加载用户[${currentUser}]的状态:`, error);
+            console.warn(`Could not load state for ${currentUser}:`, error);
             currentStates = {};
         }
     }
@@ -75,6 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function applyStatesToUI() {
         const isEditMode = editModeToggle.checked;
+        const d3 = window.d3; // Access d3 from the global scope
 
         markmapInstance.svg.selectAll('g.markmap-node').each(function(node) {
             const element = d3.select(this);
@@ -113,13 +116,17 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function saveStatesToGitHub() {
         if (currentUser === 'default') {
-            tt.showToast({ title: '请先选择一个测试员', icon: 'fail' });
+            if (window.tt) {
+                tt.showToast({ title: '请先选择一个测试员', icon: 'fail' });
+            } else {
+                alert('请先选择一个测试员');
+            }
             return;
         }
 
         saveButton.disabled = true;
         saveButton.textContent = '保存中...';
-
+        
         const messagePayload = {
             action: 'saveData',
             payload: {
@@ -131,17 +138,19 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         // 通过飞书JSSDK的postMessage与小程序通信
-        if (window.tt && window.tt.miniProgram) {
-            tt.miniProgram.postMessage({ data: messagePayload });
+        if (window.tt && window.tt.miniProgram && window.tt.miniProgram.postMessage) {
+            window.tt.miniProgram.postMessage({ data: messagePayload });
             
-            // 简单模拟成功提示，实际中可以等待小程序返回消息
+            // 简单模拟成功提示
             setTimeout(() => {
                 tt.showToast({ title: '保存指令已发送', icon: 'success' });
                 saveButton.disabled = false;
                 saveButton.textContent = '保存更改';
             }, 1500);
         } else {
-            alert('错误：此功能仅在飞书小程序中可用。');
+            console.log("Not in Feishu Mini Program environment. Mocking save call.");
+            console.log("Data to be sent:", messagePayload);
+            alert('保存功能仅在飞书小程序中可用。数据已打印到控制台。');
             saveButton.disabled = false;
             saveButton.textContent = '保存更改';
         }
@@ -162,13 +171,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     editModeToggle.addEventListener('change', () => {
         saveButton.classList.toggle('hidden', !(editModeToggle.checked && currentUser !== 'default'));
-        applyStatesToUI(); // 重新渲染以应用/移除点击事件和样式
+        applyStatesToUI();
     });
 
     saveButton.addEventListener('click', saveStatesToGitHub);
 
     // 4. 初始化页面
-    // 可以在这里添加逻辑来动态填充版本号选择器
-    // fetch('/cases/versions.json').then(...)
     loadAndRender();
 });
