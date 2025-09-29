@@ -1,0 +1,21 @@
+{
+  "name": "testcase",
+  "version": "1.0.0",
+  "description": "欢迎使用我们的轻量级测试用例管理系统！这个系统旨在帮助团队高效地创建、管理和执行测试用例，并实时共享测试进度。",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wslqm123/TestCase.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/wslqm123/TestCase/issues"
+  },
+  "homepage": "https://github.com/wslqm123/TestCase#readme"
+}

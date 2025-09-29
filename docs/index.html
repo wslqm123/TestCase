@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>产品测试用例平台</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="toolbar">
+        <h1>测试用例</h1>
+        <div class="controls">
+            <div class="control-group">
+                <label for="versionSelector">版本:</label>
+                <select id="versionSelector">
+                    <!-- 版本将由JS动态填充 -->
+                    <option value="v1.0.0">v1.0.0</option> 
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="userSelector">测试员:</label>
+                <select id="userSelector">
+                    <option value="default">默认视图</option>
+                    <option value="zhangsan">张三</option>
+                    <option value="lisi">李四</option>
+                    <option value="wangwu">王五</option>
+                    <!-- 根据需要添加更多团队成员 -->
+                </select>
+            </div>
+            <div class="control-group">
+                <label class="switch">
+                    <input type="checkbox" id="editModeToggle">
+                    <span class="slider"></span>
+                </label>
+                <span>编辑模式</span>
+            </div>
+            <button id="saveButton" class="hidden">保存更改</button>
+        </div>
+    </div>
+
+    <div class="content">
+        <svg id="markmap"></svg>
+    </div>
+
+    <!-- 引入 Markmap 核心库 -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.14.3"></script>
+    <!-- 引入飞书 JSSDK，用于通信 -->
+    <script src="https://lf3-cdn-tos.bytescm.com/obj/static/ee/invoke/js-sdk/1.2.0/js-sdk.js"></script>
+    <!-- 引入我们自己的脚本 -->
+    <script src="script.js"></script>
+
+</body>
+</html>
