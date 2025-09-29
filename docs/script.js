@@ -1,94 +1,140 @@
-// docs/script.js
-
 document.addEventListener('DOMContentLoaded', () => {
 
-    // --- 1. 初始化和获取参数 ---
-    const urlParams = new URLSearchParams(window.location.search);
-    const currentVersion = urlParams.get('version') || 'v1.0.0';
-    const currentUser = urlParams.get('user') || 'default';
-    const isEditMode = urlParams.get('edit') === 'true';
-
-    // --- DOM 元素引用 ---
+    // --- 1. 全局变量和 DOM 元素 ---
+    const { markmap: markmapGlobal } = window;
     const userSelector = document.getElementById('userSelector');
     const versionSelector = document.getElementById('versionSelector');
     const editModeToggle = document.getElementById('editModeToggle');
     const saveButton = document.getElementById('saveButton');
     const markmapContainer = document.getElementById('markmap-container');
 
-    // --- 状态定义 ---
     const STATUS = { UNTESTED: '⚪️', PASS: '✅', FAIL: '❌', BLOCKED: '🟡' };
     const STATUS_CYCLE = [STATUS.UNTESTED, STATUS.PASS, STATUS.FAIL, STATUS.BLOCKED];
-    let currentStates = {}; // 内存中保存当前用户的状态
 
-    // --- 更新UI的显示状态 ---
-    userSelector.value = currentUser;
-    versionSelector.value = currentVersion;
-    editModeToggle.checked = isEditMode;
-    saveButton.classList.toggle('hidden', !isEditMode || currentUser === 'default');
+    let currentStates = {};
+    let markmapInstance;
+    let originalMarkdown = '';
 
-    // --- 核心加载和渲染逻辑 ---
-    async function main() {
-        try {
-            const baseUrl = getBaseUrl();
-            const markdownUrl = `${baseUrl}/cases/${currentVersion}/_index.md`;
-            const resultsUrl = `${baseUrl}/results/${currentVersion}/${currentUser}.json`;
-            
-            // 使用 no-cache 策略强制浏览器不使用缓存
-            const fetchOptions = { cache: 'no-cache' };
+    // --- 2. 核心函数 ---
 
-            const [mdResponse, stateResponse] = await Promise.all([
-                fetch(markdownUrl, fetchOptions),
-                currentUser !== 'default' ? fetch(resultsUrl, fetchOptions) : Promise.resolve(null)
-            ]);
-
-            if (!mdResponse.ok) throw new Error(`无法加载用例文件: ${mdResponse.statusText}`);
-            const originalMarkdown = await mdResponse.text();
-
-            if (stateResponse && stateResponse.ok) {
-                currentStates = await stateResponse.json();
-            } else {
-                currentStates = {};
-            }
-
-            const processedMarkdown = preprocessMarkdown(originalMarkdown, currentStates);
-            
-            // 将处理后的Markdown注入页面，autoloader会自动渲染
-            markmapContainer.innerHTML = `<script type="text/template">${processedMarkdown}<\/script>`;
-            
-            // 关键：autoloader 在渲染完成后会派发一个 'markmap' 事件
-            // 我们监听这个事件来确保在渲染完成后再执行我们的交互代码
-            
-            const handleRender = (event) => {
-                console.log('Markmap rendered!', event.detail);
-                // event.detail.mm 是当前渲染的 Markmap 实例
-                attachClickHandlers(event.detail.mm);
-                // 移除监听器，避免重复绑定
-                window.removeEventListener('markmap', handleRender);
-            };
-            
-            window.addEventListener('markmap', handleRender);
-
-        } catch (error) {
-            console.error("加载失败:", error);
-            markmapContainer.innerHTML = `<script type="text/template">---
-markmap:
-  toolbar: true
----
-# 加载失败
-- ${error.message}
-</script>`;
-        }
-    }
-
-    // --- 辅助函数 ---
     function getBaseUrl() {
         const pathParts = window.location.pathname.split('/').filter(p => p);
         const repoName = pathParts.length > 0 ? pathParts[0] : '';
         return (window.location.hostname.includes('github.io') && repoName && repoName !== 'favicon.ico') ? `/${repoName}` : '';
     }
+    
+    // **核心渲染函数**
+    async function loadAndRender() {
+        const version = versionSelector.value;
+        const user = userSelector.value;
+
+        // 显示加载状态
+        markmapContainer.innerHTML = `<script type="text/template"># 正在加载 ${version} 的测试用例...</script>`;
+        await markmapGlobal.autoLoader.renderAll();
+
+        try {
+            const baseUrl = getBaseUrl();
+            const markdownUrl = `${baseUrl}/cases/${version}/_index.md`;
+            const resultsUrl = `${baseUrl}/results/${version}/${user}.json`;
+            const fetchOptions = { cache: 'no-cache' };
+
+            // 并行获取数据
+            const [mdResponse, stateResponse] = await Promise.all([
+                fetch(markdownUrl, fetchOptions),
+                user !== 'default' ? fetch(resultsUrl, fetchOptions) : Promise.resolve(null)
+            ]);
+
+            if (!mdResponse.ok) throw new Error(`无法加载用例文件: ${mdResponse.statusText}`);
+            originalMarkdown = await mdResponse.text();
+            if (!originalMarkdown.trim()) throw new Error(`Markdown 文件为空: ${version}`);
+
+            currentStates = (stateResponse && stateResponse.ok) ? await stateResponse.json() : {};
+            
+            // 准备最终要渲染的 Markdown
+            const processedMarkdown = preprocessMarkdown(originalMarkdown, currentStates);
+            
+            // 清空并重新注入内容
+            markmapContainer.innerHTML = `<script type="text/template">${processedMarkdown}<\/script>`;
+
+            // **最可靠的渲染完成监听方式**
+            const renderPromise = new Promise(resolve => {
+                const observer = new MutationObserver((mutations, obs) => {
+                    const svg = markmapContainer.querySelector('svg');
+                    if (svg) {
+                        // 确保 SVG 有实际尺寸后再继续
+                        if (svg.getBBox && svg.getBBox().width > 0) {
+                            resolve(svg.__markmap__);
+                            obs.disconnect(); // 停止观察
+                        }
+                    }
+                });
+                observer.observe(markmapContainer, { childList: true, subtree: true });
+            });
+
+            // 触发 autoloader
+            markmapGlobal.autoLoader.renderAll();
+            
+            // 等待渲染完成并返回实例
+            markmapInstance = await renderPromise;
+            
+            // 渲染完成后，应用交互
+            updateInteractiveLayer();
+
+        } catch (error) {
+            console.error("加载或渲染失败:", error);
+            markmapContainer.innerHTML = `<script type="text/template">---
+markmap: {toolbar: true}
+---
+# 加载失败
+- ${error.message}
+</script>`;
+            markmapGlobal.autoLoader.renderAll();
+        }
+    }
+
+    // **只更新交互层，不重新渲染整个图**
+    function updateInteractiveLayer() {
+        if (!markmapInstance || !markmapInstance.svg) return;
+
+        const isEditMode = editModeToggle.checked;
+        const currentUser = userSelector.value;
+        const d3 = window.d3;
+        
+        console.log(`Updating interactive layer. Edit mode: ${isEditMode}, User: ${currentUser}`);
+
+        d3.select(markmapInstance.svg.node()).selectAll('g.markmap-node').each(function(nodeData) {
+            const element = d3.select(this);
+            const textElement = element.select('text');
+            const originalText = nodeData.content;
+            
+            const match = originalText.match(/\[([A-Z0-9-]+)\]/);
+            if (!match) return;
+
+            // 移除旧的点击事件，防止重复绑定
+            element.on('click', null);
+
+            // 根据编辑模式和用户，决定是否添加新的点击事件
+            if (isEditMode && currentUser !== 'default') {
+                element.style('cursor', 'pointer');
+                element.on('click', function(event) {
+                    event.stopPropagation();
+                    const caseId = match[1];
+                    
+                    const currentStatusEmoji = textElement.text().trim().split(' ')[0];
+                    const currentIndex = STATUS_CYCLE.indexOf(currentStatusEmoji);
+                    const nextIndex = (currentIndex + 1) % STATUS_CYCLE.length;
+                    const newStatus = STATUS_CYCLE[nextIndex];
+                    
+                    currentStates[caseId] = newStatus;
+                    textElement.text(originalText.replace(`[${caseId}]`, `${newStatus} [${caseId}]`));
+                });
+            } else {
+                element.style('cursor', 'default');
+            }
+        });
+    }
 
     function preprocessMarkdown(markdown, states) {
-        if (!markdown) return '';
         const toolbarConfig = `---
 markmap:
   toolbar: true
@@ -107,37 +153,10 @@ markmap:
         return toolbarConfig + content;
     }
 
-    function attachClickHandlers(markmapInstance) {
-        if (!isEditMode || currentUser === 'default' || !markmapInstance || !markmapInstance.svg || !window.d3) return;
-
-        console.log("Attaching click handlers...");
-        const d3 = window.d3;
-        
-        d3.select(markmapInstance.svg.node()).selectAll('g.markmap-node').each(function(nodeData) {
-            const element = d3.select(this);
-            const textElement = element.select('text');
-            const originalText = nodeData.content;
-            
-            const match = originalText.match(/\[([A-Z0-9-]+)\]/);
-            if (!match) return;
-
-            element.style('cursor', 'pointer');
-            element.on('click', function(event) {
-                event.stopPropagation();
-                const caseId = match[1];
-                
-                const currentStatusEmoji = textElement.text().trim().split(' ')[0];
-                const currentIndex = STATUS_CYCLE.indexOf(currentStatusEmoji);
-                const nextIndex = (currentIndex >= 0 && currentIndex < STATUS_CYCLE.length - 1) ? currentIndex + 1 : 0;
-                const newStatus = STATUS_CYCLE[nextIndex];
-                
-                currentStates[caseId] = newStatus;
-                textElement.text(textElement.text().replace(currentStatusEmoji, newStatus));
-            });
-        });
-    }
-
     function saveStatesToGitHub() {
+        const currentUser = userSelector.value;
+        const currentVersion = versionSelector.value;
+
         if (currentUser === 'default') {
             const msg = '请先选择一个测试员';
             (window.tt && tt.showToast) ? tt.showToast({ title: msg, icon: 'fail' }) : alert(msg);
@@ -167,23 +186,18 @@ markmap:
         }
     }
 
-    // --- 事件监听与页面导航 ---
-    function navigate() {
-        const params = new URLSearchParams();
-        params.set('version', versionSelector.value);
-        params.set('user', userSelector.value);
-        if (editModeToggle.checked) {
-            params.set('edit', 'true');
-        }
-        // 跳转到新的 URL，这将导致页面重新加载
-        window.location.search = params.toString();
-    }
+    // --- 3. 事件监听器 ---
+    userSelector.addEventListener('change', loadAndRender);
+    versionSelector.addEventListener('change', loadAndRender);
+    
+    editModeToggle.addEventListener('change', () => {
+        saveButton.classList.toggle('hidden', !(editModeToggle.checked && userSelector.value !== 'default'));
+        // 切换编辑模式时，只需要更新交互层，不需要重新加载数据
+        updateInteractiveLayer();
+    });
 
-    userSelector.addEventListener('change', navigate);
-    versionSelector.addEventListener('change', navigate);
-    editModeToggle.addEventListener('change', navigate);
     saveButton.addEventListener('click', saveStatesToGitHub);
 
-    // --- 启动应用 ---
-    main();
+    // --- 4. 启动应用 ---
+    loadAndRender();
 });
