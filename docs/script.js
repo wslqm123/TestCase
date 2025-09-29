@@ -29,7 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadAndRender() {
         try {
             // 从 GitHub Pages 加载合并后的 Markdown 文件
-            const response = await fetch(`../cases/${currentVersion}/_index.md?cache_bust=${new Date().getTime()}`);
+            const response = await fetch(`cases/${currentVersion}/_index.md?cache_bust=${new Date().getTime()}`);
             if (!response.ok) throw new Error(`找不到版本 ${currentVersion} 的测试用例文件。`);
             
             const markdownText = await response.text();
@@ -58,7 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         try {
-            const response = await fetch(`../results/${currentVersion}/${currentUser}.json?cache_bust=${new Date().getTime()}`);
+            const response = await fetch(`results/${currentVersion}/${currentUser}.json?cache_bust=${new Date().getTime()}`);
             if (response.ok) {
                 currentStates = await response.json();
             } else {

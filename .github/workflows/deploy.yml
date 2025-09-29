@@ -4,9 +4,8 @@ name: Build and Deploy Test Cases
 on:
   push:
     branches:
-      - main  # 当 main 分支有更新时触发
+      - main
 
-# 新增的部分：授予工作流写入权限
 permissions:
   contents: write
 
@@ -25,13 +24,31 @@ jobs:
 
       - name: Build Test Case Files 🔨
         run: |
-          # 动态获取最新的版本文件夹名称
           LATEST_VERSION_DIR=$(ls -d cases/*/ | sort -V | tail -n 1 | xargs basename)
           echo "Building for version: $LATEST_VERSION_DIR"
           node scripts/build.js $LATEST_VERSION_DIR
 
+      # --- 新增的关键步骤 ---
+      - name: Prepare files for deployment 📦
+        run: |
+          # 将包含 _index.md 的整个 cases 目录复制到 docs 目录下
+          # 这样 docs/index.html 就可以通过相对路径 ../cases/... 访问到它了
+          # 但更稳妥的做法是直接将 cases 目录复制到 docs 内部
+          cp -r cases docs/
+          
+          # 将 results 目录也复制过去，以便前端能加载到测试结果
+          # 我们创建一个空的 results 目录，以防它不存在
+          mkdir -p docs/results
+          # 如果 results 目录存在于主分支，则复制它
+          if [ -d "results" ]; then
+            cp -r results/* docs/results/
+          fi
+          
+          echo "Deployment directory structure:"
+          ls -R docs/
+
       - name: Deploy to GitHub Pages 🚀
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          branch: gh-pages # 部署到 gh-pages 分支
-          folder: docs     # 从 docs 文件夹部署
+          branch: gh-pages
+          folder: docs # 现在 docs 目录包含了所有需要的文件
