@@ -1,11 +1,18 @@
 // docs/script.js
 
-// 使用 window.onload 确保所有外部资源（JS库）都已加载完毕
 window.onload = () => {
     // 1. 全局变量和初始化
-    const { Markmap, Transformer, Toolbar } = window.markmap;
-    const transformer = new Transformer();
+    // 正确地从全局对象获取可用的函数和类
+    const { Markmap, Toolbar, transform } = window.markmap;
     
+    // 检查核心功能是否存在
+    if (typeof transform !== 'function' || typeof Markmap.create !== 'function') {
+        console.error('Markmap libraries did not load correctly.');
+        document.body.innerHTML = '<h1>Error: Markmap libraries did not load correctly.</h1>';
+        return;
+    }
+
+    // 初始化 Markmap 和 Toolbar
     const svgEl = document.querySelector('#markmap');
     const markmapInstance = Markmap.create(svgEl, null);
     Toolbar.create(markmapInstance, svgEl);
@@ -16,9 +23,9 @@ window.onload = () => {
     const editModeToggle = document.getElementById('editModeToggle');
     const saveButton = document.getElementById('saveButton');
 
+    // 状态定义
     const STATUS = { UNTESTED: '⚪️', PASS: '✅', FAIL: '❌', BLOCKED: '🟡' };
     const STATUS_CYCLE = [STATUS.UNTESTED, STATUS.PASS, STATUS.FAIL, STATUS.BLOCKED];
-
     let currentStates = {};
 
     // 2. 核心函数
@@ -33,18 +40,9 @@ window.onload = () => {
         const user = userSelector.value;
 
         try {
-            // 在获取数据前，确保 SVG 容器有具体的尺寸
-            // 这是解决 "SVGLength" 错误的关键
-            const contentDiv = document.querySelector('.content');
-            if (contentDiv.clientHeight === 0) {
-                 // 如果容器高度为0，稍等一下再重试
-                 await new Promise(resolve => setTimeout(resolve, 100));
-            }
-
             const baseUrl = getBaseUrl();
             const markdownUrl = `${baseUrl}/cases/${version}/_index.md?cache_bust=${Date.now()}`;
             const resultsUrl = `${baseUrl}/results/${version}/${user}.json?cache_bust=${Date.now()}`;
-            
             const fetchOptions = { cache: 'no-cache' };
 
             const [mdResponse, stateResponse] = await Promise.all([
@@ -53,26 +51,47 @@ window.onload = () => {
             ]);
 
             if (!mdResponse.ok) throw new Error(`无法加载用例文件: ${mdResponse.statusText}`);
-            const markdownText = await mdResponse.text();
+            let markdownText = await mdResponse.text();
+            
+            if (!markdownText.trim()) {
+                markdownText = "# (空)\n- 此版本没有测试用例。";
+            }
             
             currentStates = (stateResponse && stateResponse.ok) ? await stateResponse.json() : {};
-
-            const { root } = transformer.transform(markdownText);
+            
+            // 预处理 Markdown，添加状态图标
+            const processedMarkdown = preprocessMarkdown(markdownText, currentStates);
+            
+            // **使用正确的 `transform` 函数**
+            const { root } = transform(processedMarkdown);
+            
             markmapInstance.setData(root);
-            // Toolbar 会自动处理 fit，但首次加载手动调用一次更保险
-            await markmapInstance.fit(); 
+            await markmapInstance.fit();
 
-            // 渲染完成，应用交互
             applyStatesToUI();
 
         } catch (error) {
             console.error("加载或渲染失败:", error);
-            const { root } = transformer.transform(`# 加载失败\n\n- ${error.message}`);
+            const { root } = transform(`# 加载失败\n\n- ${error.message}`);
             markmapInstance.setData(root);
             await markmapInstance.fit();
         }
     }
     
+    // 预处理 Markdown，添加 Emoji
+    function preprocessMarkdown(markdown, states) {
+        return markdown.split('\n').map(line => {
+            const match = line.match(/(\s*-\s*)(\[([A-Z0-9-]+)\])/);
+            if (match) {
+                const caseId = match[3];
+                const status = states[caseId] || STATUS.UNTESTED;
+                // 将 [ID] 替换为 emoji + [ID]
+                return line.replace(match[2], `${status} ${match[2]}`);
+            }
+            return line;
+        }).join('\n');
+    }
+
     function applyStatesToUI() {
         const isEditMode = editModeToggle.checked;
         const currentUser = userSelector.value;
@@ -80,36 +99,35 @@ window.onload = () => {
         
         if (!markmapInstance || !markmapInstance.svg) return;
         
+        console.log("Applying UI states. Edit mode:", isEditMode);
+
         markmapInstance.svg.selectAll('g.markmap-node').each(function(nodeData) {
             const element = d3.select(this);
             const textElement = element.select('text');
-            const originalText = nodeData.content;
+            const originalTextWithStatus = textElement.text(); // 获取当前显示的文本
             
-            const match = originalText.match(/\[([A-Z0-9-]+)\]/);
+            const match = originalTextWithStatus.match(/\[([A-Z0-9-]+)\]/);
             if (!match) return;
 
             const caseId = match[1];
-            // 从原始MD文本中移除可能残留的旧状态图标
-            const cleanOriginalText = originalText.replace(/^[⚪️✅❌🟡]\s*/, '');
-            const currentStatus = currentStates[caseId] || STATUS.UNTESTED;
-            
-            textElement.text(`${currentStatus} ${cleanOriginalText}`);
 
-            // 移除旧的点击事件，防止重复绑定
-            element.on('click', null);
-            element.style('cursor', 'default');
+            // 移除旧事件监听器
+            element.on('click', null).style('cursor', 'default');
             
             if (isEditMode && currentUser !== 'default') {
                 element.style('cursor', 'pointer');
                 element.on('click', function(event) {
                     event.stopPropagation();
                     
-                    const oldStatus = currentStates[caseId] || STATUS.UNTESTED;
+                    const currentFullText = textElement.text();
+                    const currentStatusEmoji = currentFullText.trim().split(' ')[0];
+                    const oldStatus = STATUS_CYCLE.find(s => s === currentStatusEmoji) || STATUS.UNTESTED;
+                    
                     const currentIndex = STATUS_CYCLE.indexOf(oldStatus);
                     const newStatus = STATUS_CYCLE[(currentIndex + 1) % STATUS_CYCLE.length];
                     
                     currentStates[caseId] = newStatus;
-                    textElement.text(`${newStatus} ${cleanOriginalText}`);
+                    textElement.text(currentFullText.replace(oldStatus, newStatus));
                 });
             }
         });
@@ -133,6 +151,7 @@ window.onload = () => {
             payload: { version: currentVersion, user: currentUser, content: currentStates, message: `[Test] ${currentUser} updated results for ${currentVersion}` }
         };
 
+        // ... (省略与之前相同的 postMessage 逻辑)
         if (window.tt && window.tt.miniProgram && window.tt.miniProgram.postMessage) {
             window.tt.miniProgram.postMessage({ data: messagePayload });
             setTimeout(() => {
@@ -148,28 +167,17 @@ window.onload = () => {
         }
     }
 
-    // 3. 事件监听器
+    // --- 事件监听器 ---
     userSelector.addEventListener('change', loadDataAndRender);
     versionSelector.addEventListener('change', loadDataAndRender);
     
     editModeToggle.addEventListener('change', () => {
         saveButton.classList.toggle('hidden', !(editModeToggle.checked && userSelector.value !== 'default'));
-        // 只更新UI交互，不重新加载数据
-        applyStatesToUI();
+        applyStatesToUI(); // 只更新交互，不重新加载数据
     });
 
     saveButton.addEventListener('click', saveStatesToGitHub);
 
-    // 4. 启动应用
-    // URL参数只在初始加载时使用一次
-    const urlParams = new URLSearchParams(window.location.search);
-    const version = urlParams.get('version');
-    const user = urlParams.get('user');
-    const edit = urlParams.get('edit');
-    if (version) versionSelector.value = version;
-    if (user) userSelector.value = user;
-    if (edit === 'true') editModeToggle.checked = true;
-    
-    // 手动触发一次初始加载
+    // --- 启动应用 ---
     loadDataAndRender();
 };
