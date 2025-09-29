@@ -9,7 +9,6 @@
     <script src="https://cdn.jsdelivr.net/npm/markmap-autoloader@0.16.1"></script>
 </head>
 <body>
-
     <div class="toolbar">
         <h1>测试用例</h1>
         <div class="controls">
@@ -38,12 +37,14 @@
             <button id="saveButton" class="hidden">保存更改</button>
         </div>
     </div>
-
     <div class="content">
-        <!-- autoloader 会自动将内容渲染到这个 div 中 -->
-        <div id="markmap-container" class="markmap"></div>
+        <!-- autoloader 将在这里自动渲染 -->
+        <div id="markmap-container" class="markmap">
+            <script type="text/template">
+                # 正在加载...
+            </script>
+        </div>
     </div>
-
     <!-- 飞书 JSSDK -->
     <script src="https://lf3-cdn-tos.bytescm.com/obj/static/ee/invoke/js-sdk/1.2.0/js-sdk.js"></script>
     <!-- 我们自己的脚本 -->

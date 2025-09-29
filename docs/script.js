@@ -1,179 +1,162 @@
-// 确保在DOM加载完成后执行
-document.addEventListener('DOMContentLoaded', () => {
+// docs/script.js
 
-    // 1. DOM元素获取
-    const userSelector = document.getElementById('userSelector');
-    const versionSelector = document.getElementById('versionSelector');
-    const editModeToggle = document.getElementById('editModeToggle');
-    const saveButton = document.getElementById('saveButton');
-    const markmapContainer = document.getElementById('markmap-container');
+// 1. 获取URL参数
+const urlParams = new URLSearchParams(window.location.search);
+const currentVersion = urlParams.get('version') || 'v1.0.0'; // 默认版本
+const currentUser = urlParams.get('user') || 'default';     // 默认用户
+const isEditMode = urlParams.get('edit') === 'true';
 
-    // 测试状态定义
-    const STATUS = { UNTESTED: '⚪️', PASS: '✅', FAIL: '❌', BLOCKED: '🟡' };
-    const STATUS_CYCLE = [STATUS.UNTESTED, STATUS.PASS, STATUS.FAIL, STATUS.BLOCKED];
+// 2. DOM元素引用
+const userSelector = document.getElementById('userSelector');
+const versionSelector = document.getElementById('versionSelector');
+const editModeToggle = document.getElementById('editModeToggle');
+const saveButton = document.getElementById('saveButton');
+const markmapContainer = document.getElementById('markmap-container');
 
-    // 当前状态
-    let currentUser = userSelector.value;
-    let currentVersion = versionSelector.value;
-    let currentStates = {};
-    let markmapInstance; // 全局变量，用于存储当前markmap实例
+// 3. 状态定义
+const STATUS = { UNTESTED: '⚪️', PASS: '✅', FAIL: '❌', BLOCKED: '🟡' };
+const STATUS_CYCLE = [STATUS.UNTESTED, STATUS.PASS, STATUS.FAIL, STATUS.BLOCKED];
+let currentStates = {};
+let originalMarkdown = '';
 
-    // 2. 核心函数
-    function getBaseUrl() {
-        const pathParts = window.location.pathname.split('/');
-        const repoName = pathParts[1] || '';
-        if (window.location.hostname.includes('github.io') && repoName) {
-            return `/${repoName}`;
+// 4. 初始化UI状态
+userSelector.value = currentUser;
+versionSelector.value = currentVersion;
+editModeToggle.checked = isEditMode;
+saveButton.classList.toggle('hidden', !isEditMode || currentUser === 'default');
+
+// 5. 核心函数：数据获取和渲染
+async function main() {
+    try {
+        // 动态计算基础URL
+        const pathParts = window.location.pathname.split('/').filter(p => p);
+        const repoName = pathParts[0] === 'TestCase' ? '/TestCase' : '';
+
+        // 并行获取Markdown和用户状态
+        const [mdResponse, stateResponse] = await Promise.all([
+            fetch(`${repoName}/cases/${currentVersion}/_index.md?cache_bust=${Date.now()}`),
+            currentUser !== 'default' ? fetch(`${repoName}/results/${currentVersion}/${currentUser}.json?cache_bust=${Date.now()}`) : Promise.resolve(null)
+        ]);
+
+        if (!mdResponse.ok) throw new Error(`无法加载用例文件: ${mdResponse.statusText}`);
+        originalMarkdown = await mdResponse.text();
+
+        if (stateResponse && stateResponse.ok) {
+            currentStates = await stateResponse.json();
         }
-        return '';
-    }
 
-    async function loadAndRender() {
-        // 清空容器，准备重新渲染
-        markmapContainer.innerHTML = ''; 
+        // 预处理Markdown，插入状态图标
+        const processedMarkdown = preprocessMarkdown(originalMarkdown, currentStates);
 
-        try {
-            const baseUrl = getBaseUrl();
-            const markdownUrl = `${baseUrl}/cases/${currentVersion}/_index.md?cache_bust=${new Date().getTime()}`;
-            console.log(`[loadAndRender] Fetching markdown from: ${markdownUrl}`);
-
-            const response = await fetch(markdownUrl);
-            if (!response.ok) throw new Error(`Failed to fetch ${markdownUrl}. Status: ${response.status}`);
-
-            const markdownText = await response.text();
-            if (!markdownText.trim()) throw new Error(`Markdown file for version ${currentVersion} is empty.`);
-            
-            // **核心逻辑：让 autoloader 处理一切**
-            // 1. 创建 script 标签并注入 markdown
-            const scriptEl = document.createElement('script');
-            scriptEl.type = 'text/template';
-            scriptEl.textContent = markdownText; // 使用 textContent 以避免 HTML 注入
-            markmapContainer.appendChild(scriptEl);
-            
-            // 2. autoloader 会自动发现并渲染 .markmap > script 元素。
-            // 渲染是异步的，我们需要找到渲染后的实例。
-            // window.markmap.autoLoader.renderAll() 确实可以做到这一点。
-            const markmaps = await window.markmap.autoLoader.renderAll();
-            
-            if (markmaps && markmaps.length > 0) {
-                markmapInstance = markmaps.find(m => m.el.parentElement === markmapContainer);
-                if (markmapInstance) {
-                    await loadUserStates();
-                    applyStatesToUI();
-                } else {
-                     throw new Error('Markmap instance not found after render.');
-                }
-            } else {
-                 throw new Error('markmap.autoLoader.renderAll() did not return any instances.');
-            }
-
-        } catch (error) {
-            console.error("[loadAndRender] Failed:", error);
-            markmapContainer.innerHTML = `<script type="text/template"># 加载失败\n\n- ${error.message}</script>`;
-            await window.markmap.autoLoader.renderAll();
-        }
-    }
-
-    async function loadUserStates() {
-        if (currentUser === 'default') {
-            currentStates = {};
-            return;
-        }
-        try {
-            const baseUrl = getBaseUrl();
-            const resultsUrl = `${baseUrl}/results/${currentVersion}/${currentUser}.json?cache_bust=${new Date().getTime()}`;
-            console.log(`[loadUserStates] Fetching results from: ${resultsUrl}`);
-            
-            const response = await fetch(resultsUrl);
-            currentStates = response.ok ? await response.json() : {};
-        } catch (error) {
-            console.warn(`[loadUserStates] Could not load state for ${currentUser}:`, error);
-            currentStates = {};
-        }
-    }
-
-    function applyStatesToUI() {
-        if (!markmapInstance || !markmapInstance.svg) return;
-
-        const isEditMode = editModeToggle.checked;
-        const d3 = window.d3;
+        // 将处理后的Markdown放入模板，让autoloader渲染
+        markmapContainer.innerHTML = `<script type="text/template">${processedMarkdown}<\/script>`;
         
-        // 使用 d3 选择器来操作 SVG 元素
-        d3.select(markmapInstance.svg.node()).selectAll('g.markmap-node').each(function(nodeData) {
-            const element = d3.select(this);
-            const textElement = element.select('text');
-            const originalText = nodeData.content;
-            
-            const match = originalText.match(/\[([A-Z0-9-]+)\]/);
-            if (!match) return;
+        // Autoloader 会自动运行，我们不需要再手动调用 renderAll
 
+        // 渲染完成后，为可编辑节点添加点击事件
+        // autoloader是异步的，需要稍作延迟
+        setTimeout(attachClickHandlers, 500);
+
+    } catch (error) {
+        console.error("初始化失败:", error);
+        markmapContainer.innerHTML = `<script type="text/template"># 加载失败\n\n- ${error.message}<\/script>`;
+    }
+}
+
+// 6. 辅助函数
+function preprocessMarkdown(markdown, states) {
+    if (!markdown) return '';
+    return markdown.split('\n').map(line => {
+        const match = line.match(/(\s*-\s*)(\[([A-Z0-9-]+)\])/);
+        if (match) {
+            const caseId = match[3];
+            const status = states[caseId] || STATUS.UNTESTED;
+            return line.replace(match[2], `${status} ${match[2]}`);
+        }
+        return line;
+    }).join('\n');
+}
+
+function attachClickHandlers() {
+    if (!isEditMode || currentUser === 'default') return;
+
+    const svg = markmapContainer.querySelector('svg');
+    if (!svg) return;
+
+    // d3由autoloader加载，此时应该可用
+    const d3 = window.d3;
+    d3.select(svg).selectAll('g.markmap-node').each(function(nodeData) {
+        const element = d3.select(this);
+        const textElement = element.select('text');
+        const originalText = textElement.text();
+        
+        const match = originalText.match(/\[([A-Z0-9-]+)\]/);
+        if (!match) return;
+
+        element.classed('editable', true);
+        element.on('click', function(event) {
+            event.stopPropagation();
             const caseId = match[1];
-            const currentStatus = currentStates[caseId] || STATUS.UNTESTED;
-            textElement.text(`${currentStatus} ${originalText}`);
-
-            element.classed('editable', isEditMode && currentUser !== 'default');
-            element.on('click', isEditMode && currentUser !== 'default' ? function(event) {
-                event.stopPropagation();
-                const oldStatus = currentStates[caseId] || STATUS.UNTESTED;
-                const currentIndex = STATUS_CYCLE.indexOf(oldStatus);
-                const newStatus = STATUS_CYCLE[(currentIndex + 1) % STATUS_CYCLE.length];
-                currentStates[caseId] = newStatus;
-                textElement.text(`${newStatus} ${originalText}`);
-            } : null);
+            
+            // 直接从文本中提取当前状态
+            const currentStatusEmoji = originalText.split(' ')[0];
+            const currentIndex = STATUS_CYCLE.indexOf(currentStatusEmoji);
+            const nextIndex = (currentIndex + 1) % STATUS_CYCLE.length;
+            const newStatus = STATUS_CYCLE[nextIndex];
+            
+            // 更新内存中的状态
+            currentStates[caseId] = newStatus;
+            
+            // 更新UI
+            const newText = originalText.replace(currentStatusEmoji, newStatus);
+            textElement.text(newText);
         });
-    }
+    });
+}
+
+function saveStatesToGitHub() {
+    saveButton.disabled = true;
+    saveButton.textContent = '保存中...';
     
-    function saveStatesToGitHub() {
-        if (currentUser === 'default') {
-            const msg = '请先选择一个测试员';
-            (window.tt && tt.showToast) ? tt.showToast({ title: msg, icon: 'fail', duration: 2000 }) : alert(msg);
-            return;
-        }
+    const messagePayload = {
+        action: 'saveData',
+        payload: { version: currentVersion, user: currentUser, content: currentStates, message: `[Test] ${currentUser} updated results for ${currentVersion}` }
+    };
 
-        saveButton.disabled = true;
-        saveButton.textContent = '保存中...';
-        
-        const messagePayload = {
-            action: 'saveData',
-            payload: { version: currentVersion, user: currentUser, content: currentStates, message: `[Test] ${currentUser} updated results for ${currentVersion}` }
-        };
-
-        if (window.tt && window.tt.miniProgram && window.tt.miniProgram.postMessage) {
-            window.tt.miniProgram.postMessage({ data: messagePayload });
-            setTimeout(() => {
-                if(window.tt.showToast) tt.showToast({ title: '保存指令已发送', icon: 'success', duration: 2000 });
-                saveButton.disabled = false;
-                saveButton.textContent = '保存更改';
-            }, 1500);
-        } else {
-            console.log("Not in Feishu Mini Program environment. Mocking save call:", messagePayload);
-            alert('保存功能仅在飞书小程序中可用。数据已打印到控制台。');
+    if (window.tt && window.tt.miniProgram && window.tt.miniProgram.postMessage) {
+        window.tt.miniProgram.postMessage({ data: messagePayload });
+        setTimeout(() => {
+            if(window.tt.showToast) tt.showToast({ title: '保存指令已发送', icon: 'success', duration: 2000 });
             saveButton.disabled = false;
             saveButton.textContent = '保存更改';
-        }
+        }, 1500);
+    } else {
+        console.log("Not in Feishu Mini Program environment. Mocking save call:", messagePayload);
+        alert('保存功能仅在飞书小程序中可用。数据已打印到控制台。');
+        saveButton.disabled = false;
+        saveButton.textContent = '保存更改';
     }
+}
 
-    // 3. 事件监听器
-    userSelector.addEventListener('change', (e) => {
-        currentUser = e.target.value;
-        editModeToggle.checked = false;
-        editModeToggle.dispatchEvent(new Event('change'));
-        loadAndRender();
-    });
+function navigate() {
+    const newVersion = versionSelector.value;
+    const newUser = userSelector.value;
+    const newEditMode = editModeToggle.checked;
+    
+    const params = new URLSearchParams();
+    params.set('version', newVersion);
+    params.set('user', newUser);
+    if (newEditMode) {
+        params.set('edit', 'true');
+    }
+    window.location.search = params.toString();
+}
 
-    versionSelector.addEventListener('change', (e) => {
-        currentVersion = e.target.value;
-        loadAndRender();
-    });
+// 7. 事件监听器
+userSelector.addEventListener('change', navigate);
+versionSelector.addEventListener('change', navigate);
+editModeToggle.addEventListener('change', navigate);
+saveButton.addEventListener('click', saveStatesToGitHub);
 
-    editModeToggle.addEventListener('change', () => {
-        saveButton.classList.toggle('hidden', !(editModeToggle.checked && currentUser !== 'default'));
-        applyStatesToUI();
-    });
-
-    saveButton.addEventListener('click', saveStatesToGitHub);
-
-    // 4. 初始化页面
-    // autoloader 会在 DOM 加载后自动运行一次，所以我们在这里调用 loadAndRender 来加载我们的动态数据
-    loadAndRender();
-});
+// 8. 启动应用
+main();
