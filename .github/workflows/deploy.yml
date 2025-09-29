@@ -5,50 +5,66 @@ on:
   push:
     branches:
       - main
+  # 允许手动触发
+  workflow_dispatch:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout 🛎️
+      - name: 1. Checkout Code
         uses: actions/checkout@v3
 
-      - name: Set up Node.js
+      - name: 2. Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
 
-      - name: Build Test Case Files 🔨
+      - name: 3. Build Test Case Index File
+        id: build
         run: |
-          LATEST_VERSION_DIR=$(ls -d cases/*/ | sort -V | tail -n 1 | xargs basename)
-          echo "Building for version: $LATEST_VERSION_DIR"
-          node scripts/build.js $LATEST_VERSION_DIR
-
-      # --- 新增的关键步骤 ---
-      - name: Prepare files for deployment 📦
-        run: |
-          # 将包含 _index.md 的整个 cases 目录复制到 docs 目录下
-          # 这样 docs/index.html 就可以通过相对路径 ../cases/... 访问到它了
-          # 但更稳妥的做法是直接将 cases 目录复制到 docs 内部
-          cp -r cases docs/
+          # 找出最新的版本目录名，例如 "v1.0.0"
+          LATEST_VERSION_DIR_NAME=$(ls -v cases | tail -n 1)
+          echo "Latest version found: $LATEST_VERSION_DIR_NAME"
           
-          # 将 results 目录也复制过去，以便前端能加载到测试结果
-          # 我们创建一个空的 results 目录，以防它不存在
-          mkdir -p docs/results
-          # 如果 results 目录存在于主分支，则复制它
+          # 执行构建脚本
+          node scripts/build.js $LATEST_VERSION_DIR_NAME
+          
+          # 将版本号设置为一个输出，方便后续步骤使用
+          echo "version=${LATEST_VERSION_DIR_NAME}" >> $GITHUB_OUTPUT
+
+      - name: 4. Prepare Deployment Artifact
+        run: |
+          # 创建一个临时的部署目录，避免混乱
+          mkdir deploy_dist
+          
+          # 复制网页核心文件
+          cp -r docs/* deploy_dist/
+          
+          # 复制测试用例数据
+          cp -r cases deploy_dist/
+          
+          # 复制测试结果数据 (如果存在)
           if [ -d "results" ]; then
-            cp -r results/* docs/results/
+            cp -r results deploy_dist/
           fi
           
-          echo "Deployment directory structure:"
-          ls -R docs/
+          # 打印出最终要部署的目录结构以供调试
+          echo "--- Content of deployment directory ---"
+          ls -R deploy_dist
+          echo "-------------------------------------"
 
-      - name: Deploy to GitHub Pages 🚀
-        uses: JamesIves/github-pages-deploy-action@v4
+      - name: 5. Upload Artifact
+        uses: actions/upload-pages-artifact@v2
         with:
-          branch: gh-pages
-          folder: docs # 现在 docs 目录包含了所有需要的文件
+          path: ./deploy_dist
+
+      - name: 6. Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v2
