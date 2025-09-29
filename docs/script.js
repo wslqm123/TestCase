@@ -1,25 +1,21 @@
 document.addEventListener('DOMContentLoaded', () => {
     // 1. 全局变量和 DOM 元素
-    const userSelector = document.getElementById('userSelector');
+    const userSelector = document.getElementById('userselector');
     const versionSelector = document.getElementById('versionSelector');
     const editModeToggle = document.getElementById('editModeToggle');
     const saveButton = document.getElementById('saveButton');
     const markmapContainer = document.getElementById('markmap-container');
     
-    // 测试状态定义
     const STATUS = { UNTESTED: '⚪️', PASS: '✅', FAIL: '❌', BLOCKED: '🟡' };
     const STATUS_CYCLE = [STATUS.UNTESTED, STATUS.PASS, STATUS.FAIL, STATUS.BLOCKED];
 
-    // 当前状态
     let currentUser = userSelector.value;
     let currentVersion = versionSelector.value;
     let currentStates = {};
-    let markmapInstance; // 将 Markmap 实例保存在这里
 
-    // 2. 核心函数
     function getBaseUrl() {
         const pathParts = window.location.pathname.split('/');
-        const repoName = pathParts.length > 1 ? pathParts[1] : '';
+        const repoName = pathParts[1] || '';
         return window.location.hostname.includes('github.io') ? `/${repoName}` : '';
     }
 
@@ -38,30 +34,27 @@ document.addEventListener('DOMContentLoaded', () => {
             // **核心变化在这里**
             // 1. 清空容器
             markmapContainer.innerHTML = '';
-            // 2. 创建新的 script 标签并注入 Markdown 内容
-            const scriptEl = document.createElement('script');
-            scriptEl.type = 'text/template';
-            scriptEl.innerHTML = markdownText;
-            markmapContainer.appendChild(scriptEl);
-            
-            // 3. 触发 autoloader 重新渲染
-            // renderAll() 返回一个包含所有 markmap 实例的数组
-            const markmaps = await window.markmap.autoLoader.renderAll();
-            markmapInstance = markmaps[0]; // 获取我们刚刚创建的实例
+            // 2. 动态创建 SVG 元素，而不是依赖 autoloader 自动创建
+            const svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svgEl.style.width = '100%';
+            svgEl.style.height = '100%';
+            markmapContainer.appendChild(svgEl);
 
+            // 3. 直接使用 Markmap API 创建和渲染
+            const { root } = window.markmap.transform(markdownText);
+            const mm = window.markmap.Markmap.create(svgEl, null, root);
+            
             // 4. 加载并应用状态
             await loadUserStates();
-            applyStatesToUI();
+            applyStatesToUI(mm); // 将实例传递下去
 
         } catch (error) {
             console.error("[loadAndRender] Failed:", error);
-            markmapContainer.innerHTML = `<script type="text/template"># 加载失败\n\n- ${error.message}</script>`;
-            await window.markmap.autoLoader.renderAll();
+            markmapContainer.innerHTML = `<h2>Loading Failed</h2><p>${error.message}</p>`;
         }
     }
 
     async function loadUserStates() {
-        // ... (这个函数保持不变)
         if (currentUser === 'default') {
             currentStates = {};
             return;
@@ -78,8 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function applyStatesToUI() {
-        // ... (这个函数稍微修改一下，因为现在无法直接访问 node.data)
+    function applyStatesToUI(markmapInstance) {
         if (!markmapInstance || !markmapInstance.svg) return;
 
         const isEditMode = editModeToggle.checked;
@@ -104,13 +96,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const currentIndex = STATUS_CYCLE.indexOf(oldStatus);
                 const newStatus = STATUS_CYCLE[(currentIndex + 1) % STATUS_CYCLE.length];
                 currentStates[caseId] = newStatus;
-                textElement.text(`${newStatus} ${originalText}`);
+                d3.select(this).select('text').text(`${newStatus} ${originalText}`);
             } : null);
         });
     }
     
     function saveStatesToGitHub() {
-        // ... (这个函数保持不变)
         if (currentUser === 'default') {
             const msg = '请先选择一个测试员';
             (window.tt && tt.showToast) ? tt.showToast({ title: msg, icon: 'fail', duration: 2000 }) : alert(msg);
@@ -140,7 +131,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 3. 事件监听器
+    // 事件监听器
     userSelector.addEventListener('change', (e) => {
         currentUser = e.target.value;
         editModeToggle.checked = false;
@@ -154,13 +145,24 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     editModeToggle.addEventListener('change', () => {
-        saveButton.classList.toggle('hidden', !(editModeToggle.checked && currentUser !== 'default'));
-        applyStatesToUI();
+        const isEditOn = editModeToggle.checked && currentUser !== 'default';
+        saveButton.classList.toggle('hidden', !isEditOn);
+        
+        // 重新获取 markmap 实例并应用UI，因为每次 loadAndRender 都会重新创建
+        const svgEl = document.querySelector('#markmap-container svg.markmap');
+        if (svgEl && svgEl.__markmap__) {
+            applyStatesToUI(svgEl.__markmap__);
+        }
     });
 
     saveButton.addEventListener('click', saveStatesToGitHub);
 
-    // 4. 初始化页面
-    // autoloader 已经自动执行了一次，现在我们手动触发一次数据加载
-    loadAndRender();
+    // 初始化页面
+    // 确保所有库加载完毕
+    const checkLibs = setInterval(() => {
+        if (window.markmap && window.markmap.transform && window.markmap.Markmap) {
+            clearInterval(checkLibs);
+            loadAndRender();
+        }
+    }, 100);
 });
